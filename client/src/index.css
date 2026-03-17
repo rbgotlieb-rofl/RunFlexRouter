@@ -1,0 +1,27 @@
+@import 'mapbox-gl/dist/mapbox-gl.css';
+@import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* MapBox Specific Styling */
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-bottom-right {
+  display: none !important;
+}
+
+.route-preview-map {
+  position: relative;
+  min-height: 140px;
+}
