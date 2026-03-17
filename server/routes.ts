@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { routeFilterSchema } from "@shared/schema";
 import { generateRoutes } from "./services/route-generator";
-import { getLondonLocations, geocodeLocation, LONDON_LOCATIONS } from "./services/location-service";
+import { searchLocations, geocodeLocation } from "./services/location-service";
 import { generateCircularRoute, hasRetracing, isGoodLoop, computeLoopScore } from "./generateCircularRoute";
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -14,11 +14,6 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
-
-const POI_ENTRIES = Object.entries(LONDON_LOCATIONS).filter(([name]) => {
-  const skip = ["Current Location", "Holmwood Grove"];
-  return !skip.includes(name);
-}).map(([name, point]) => ({ name, lat: point.lat, lng: point.lng }));
 
 function findFurthestPoint(
   routePath: { lat: number; lng: number }[],
@@ -84,35 +79,32 @@ async function resolveStartAreaName(lat: number, lng: number, queryHint?: string
   }
 }
 
-function findNearbyPOIs(
+// Discover nearby POIs along a route using reverse geocoding at sampled points
+async function findNearbyPOIsViaGeocode(
   routePath: { lat: number; lng: number }[],
   usedNames: Set<string>,
   startAreaName: string,
-  maxResults: number = 5
-): string[] {
-  const candidates: { name: string; minDist: number }[] = [];
+  maxResults: number = 3
+): Promise<string[]> {
+  if (routePath.length < 4) return [];
+
   const startLower = startAreaName.toLowerCase();
+  const sampleIndices = [
+    Math.floor(routePath.length * 0.25),
+    Math.floor(routePath.length * 0.5),
+    Math.floor(routePath.length * 0.75),
+  ];
 
-  for (const poi of POI_ENTRIES) {
-    if (poi.name.toLowerCase().includes(startLower) || startLower.includes(poi.name.toLowerCase())) continue;
-    if (poi.name.includes(", ")) {
-      const area = poi.name.split(", ").pop()?.toLowerCase() || '';
-      if (area === startLower) continue;
-    }
-
-    let minDist = Infinity;
-    const step = Math.max(1, Math.floor(routePath.length / 30));
-    for (let i = 0; i < routePath.length; i += step) {
-      const d = haversineKm(routePath[i].lat, routePath[i].lng, poi.lat, poi.lng);
-      if (d < minDist) minDist = d;
-    }
-    if (minDist < 1.5 && !usedNames.has(poi.name)) {
-      candidates.push({ name: poi.name, minDist });
+  const names: string[] = [];
+  for (const idx of sampleIndices) {
+    if (names.length >= maxResults) break;
+    const pt = routePath[idx];
+    const result = await reverseGeocodeAtPoint(pt.lat, pt.lng, 'poi,neighborhood,locality');
+    if (result && !usedNames.has(result.name) && !result.name.toLowerCase().includes(startLower)) {
+      names.push(result.name);
     }
   }
-
-  candidates.sort((a, b) => a.minDist - b.minDist);
-  return candidates.slice(0, maxResults).map(c => c.name);
+  return names;
 }
 
 async function generateLoopName(
@@ -126,7 +118,8 @@ async function generateLoopName(
   const suffix = ` (${typeof km === 'number' ? km.toFixed(1) : km} km • ${mins} min)`;
   const maxPrefix = 44 - suffix.length;
 
-  const nearby = findNearbyPOIs(routePath, usedNames, startAreaName, 5);
+  // Try reverse geocoding at sampled points along the route
+  const nearby = await findNearbyPOIsViaGeocode(routePath, usedNames, startAreaName, 3);
 
   const prefixes = [
     ...nearby.map(n => `Loop via ${n}`),
@@ -241,12 +234,8 @@ async function resolveStartPoint(req: any): Promise<{ lat: number; lng: number }
     }
 
     try {
-      const matches = await getLondonLocations(query);
-      let picked =
-        matches.find((m: any) =>
-          typeof m.name === "string" && m.name.toLowerCase().includes("postcode")
-        ) || matches[0];
-
+      const matches = await searchLocations(query);
+      const picked = matches[0];
       if (picked?.point?.lat != null && picked?.point?.lng != null) {
         return { lat: picked.point.lat, lng: picked.point.lng };
       }
@@ -401,11 +390,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           if (!endPoint) {
             try {
-              const matches = await getLondonLocations(query);
-              const picked =
-                matches.find((m: any) =>
-                  typeof m.name === "string" && m.name.toLowerCase().includes("postcode")
-                ) || matches[0];
+              const matches = await searchLocations(query);
+              const picked = matches[0];
               if (picked?.point?.lat != null && picked?.point?.lng != null) {
                 endPoint = { lat: picked.point.lat, lng: picked.point.lng };
               }
@@ -675,37 +661,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } catch { return null; }
         }
 
-        function findNearbyPOIs(lat: number, lng: number, maxDistKm: number, limit: number) {
-          const poiCategories: Record<string, string[]> = {
-            park: ["Park", "Common", "Heath", "Gardens"],
-            water: ["Thames", "Canal", "River", "Lake", "Pond", "Bridge"],
-            landmark: ["Museum", "Palace", "Cathedral", "Abbey", "Tower", "Shard", "Eye", "School", "Station"],
-          };
+        // Find nearby POIs via Mapbox geocoding (works globally, not London-only)
+        async function findNearbyPOIsForAllMode(lat: number, lng: number, limit: number) {
+          const token = process.env.MAPBOX_ACCESS_TOKEN || "";
+          if (!token) return [];
           const results: { name: string; point: { lat: number; lng: number }; distKm: number; category: string }[] = [];
-          for (const [name, coords] of Object.entries(LONDON_LOCATIONS)) {
-            if (name === "Current Location") continue;
-            const dLat = (coords.lat - lat) * 111;
-            const dLng = (coords.lng - lng) * 111 * Math.cos(lat * Math.PI / 180);
-            const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-            if (distKm < 0.5 || distKm > maxDistKm) continue;
-            let category = "other";
-            for (const [cat, keywords] of Object.entries(poiCategories)) {
-              if (keywords.some(kw => name.includes(kw))) { category = cat; break; }
-            }
-            if (category === "other") continue;
-            results.push({ name, point: coords, distKm, category });
-          }
+
+          const searches = [
+            { query: "park", category: "park" },
+            { query: "river", category: "water" },
+            { query: "museum", category: "landmark" },
+          ];
+
+          await Promise.all(searches.map(async ({ query, category }) => {
+            try {
+              const params = new URLSearchParams({
+                access_token: token,
+                types: 'poi',
+                proximity: `${lng},${lat}`,
+                limit: '3',
+              });
+              const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`;
+              const resp = await fetch(url);
+              if (!resp.ok) return;
+              const data = await resp.json();
+              for (const feat of (data.features || [])) {
+                const pLat = feat.center[1];
+                const pLng = feat.center[0];
+                const dLat = (pLat - lat) * 111;
+                const dLng = (pLng - lng) * 111 * Math.cos(lat * Math.PI / 180);
+                const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
+                if (distKm >= 0.5 && distKm <= 10) {
+                  const name = feat.text || feat.place_name?.split(',')[0] || query;
+                  results.push({ name, point: { lat: pLat, lng: pLng }, distKm, category });
+                }
+              }
+            } catch { /* skip */ }
+          }));
+
           results.sort((a, b) => a.distKm - b.distKm);
-          const selected: typeof results = [];
-          const usedCategories = new Set<string>();
-          for (const r of results) {
-            if (selected.length >= limit) break;
-            if (!usedCategories.has(r.category) || selected.length < limit) {
-              selected.push(r);
-              usedCategories.add(r.category);
-            }
-          }
-          return selected;
+          return results.slice(0, limit);
         }
 
         const td = effectiveTargetDuration || 30;
@@ -830,9 +825,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // --- 3) A-TO-B to POI ROUTES (20-30%): 3 routes to parks/landmarks/water ---
         try {
-          const maxReachKm = hasEnd ? 8 : 6;
-          const nearbyPOIs = findNearbyPOIs(startPoint.lat, startPoint.lng, maxReachKm, 6);
-          console.log(`  📍 Found ${nearbyPOIs.length} nearby POIs within ${maxReachKm}km`);
+          const nearbyPOIs = await findNearbyPOIsForAllMode(startPoint.lat, startPoint.lng, 6);
+          console.log(`  Found ${nearbyPOIs.length} nearby POIs via geocoding`);
 
           const poiRoutes = await Promise.all(
             nearbyPOIs.slice(0, 4).map(async (poi) => {
@@ -982,16 +976,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // GET /api/config
+  // Returns only the public/URL-restricted token for map tile rendering.
+  // Use MAPBOX_PUBLIC_TOKEN for client-side map display (should be URL-restricted in Mapbox dashboard).
+  // Falls back to MAPBOX_ACCESS_TOKEN if no public token is set.
   app.get("/api/config", (_req, res) => {
-    const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || process.env.MAPBOX_API_KEY || "";
+    const mapboxToken = process.env.MAPBOX_PUBLIC_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || "";
     res.json({ mapboxToken });
   });
 
-  // GET /api/locations (unchanged)
+  // Server-side proxy for Mapbox Directions API -- keeps the secret token off the client
+  app.get("/api/mapbox/directions", async (req, res) => {
+    try {
+      const token = process.env.MAPBOX_ACCESS_TOKEN || "";
+      if (!token) return res.status(500).json({ message: "Mapbox token not configured" });
+
+      const profile = req.query.profile || "walking";
+      const coordinates = req.query.coordinates as string;
+      if (!coordinates) return res.status(400).json({ message: "coordinates parameter required" });
+
+      const params = new URLSearchParams({
+        access_token: token,
+        geometries: "geojson",
+        overview: "full",
+        steps: (req.query.steps as string) || "false",
+      });
+
+      const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordinates}.json?${params}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return res.status(resp.status).json({ message: "Mapbox API error" });
+      const data = await resp.json();
+      res.json(data);
+    } catch (err) {
+      console.error("Directions proxy error:", err);
+      res.status(500).json({ message: "Error proxying directions request" });
+    }
+  });
+
+  // Server-side proxy for Mapbox Geocoding API
+  app.get("/api/mapbox/geocode", async (req, res) => {
+    try {
+      const token = process.env.MAPBOX_ACCESS_TOKEN || "";
+      if (!token) return res.status(500).json({ message: "Mapbox token not configured" });
+
+      const query = req.query.q as string;
+      if (!query) return res.status(400).json({ message: "q parameter required" });
+
+      const types = (req.query.types as string) || "place,locality,neighborhood,address,poi";
+      const limit = (req.query.limit as string) || "5";
+      const proximity = req.query.proximity as string | undefined;
+      const country = req.query.country as string | undefined;
+
+      const params = new URLSearchParams({ access_token: token, types, limit });
+      if (proximity) params.set("proximity", proximity);
+      if (country) params.set("country", country);
+
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return res.status(resp.status).json({ message: "Mapbox API error" });
+      const data = await resp.json();
+      res.json(data);
+    } catch (err) {
+      console.error("Geocode proxy error:", err);
+      res.status(500).json({ message: "Error proxying geocode request" });
+    }
+  });
+
+  // GET /api/locations -- global search via Mapbox geocoding
   app.get("/api/locations", async (req, res) => {
     try {
       const query = (req.query.q as string) || "";
-      const locations = await getLondonLocations(query);
+      const proximity = req.query.proximity as string | undefined;
+      const locations = await searchLocations(query, proximity);
       res.json(locations);
     } catch (error) {
       console.error("Error fetching locations:", error);

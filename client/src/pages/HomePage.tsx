@@ -13,7 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, MapPin } from "lucide-react";
 
 export default function HomePage() {
-  // We're using London locations, so make sure we use appropriate default values
+  // Route search state
   const [startPoint, setStartPoint] = useState<string>("Current Location");
   const [endPoint, setEndPoint] = useState<string>("");
   const [routeMode, setRouteMode] = useState<RouteMode>("all"); // Set default to "all"
