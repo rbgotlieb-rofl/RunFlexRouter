@@ -40,8 +40,9 @@ export default function MapView({ routes, selectedRoute, onRouteSelect, userLoca
     const rts = routesRef.current;
     const sel = selectedRouteRef.current;
 
-    let center: [number, number] = [-0.1278, 51.5074];
-    let zoom = 12;
+    // Default to user location or first route; no hardcoded city default
+    let center: [number, number] = [0, 20]; // neutral world view
+    let zoom = 2;
 
     if (sel?.startPoint) {
       const sp = sel.startPoint as Point;

@@ -39,8 +39,8 @@ export default function RouteMapPreview({ route, height = 180, detailMode = fals
       // Set Mapbox access token
       mapboxgl.accessToken = config.mapboxToken;
 
-      // Default to London coordinates
-      const defaultCenter: [number, number] = [-0.1278, 51.5074];
+      // Default to route start (no hardcoded city fallback)
+      const defaultCenter: [number, number] = [0, 20];
       
       // Try to get start point from route
       let center = defaultCenter;

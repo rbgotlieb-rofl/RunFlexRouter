@@ -78,7 +78,7 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
     const routePath = route.routePath as Point[];
     const startCoord: [number, number] = routePath.length > 0
       ? [routePath[0].lng, routePath[0].lat]
-      : [-0.1278, 51.5074];
+      : [0, 20];
 
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,

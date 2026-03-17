@@ -286,7 +286,7 @@ export default function LocationAutocomplete({
                 ))
               ) : (
                 <div className="p-2 text-sm text-gray-500">
-                  No locations found. Try entering a London landmark or postcode (e.g., SW1A, W2, EC1A).
+                  No locations found. Try a city name, address, or postcode.
                 </div>
               )}
             </>

@@ -526,12 +526,12 @@ function parsePoint(pointString: string): Point {
       return { lat, lng };
     }
   } catch (e) {
-    // Fall back to a default location
-    return LONDON_LOCATIONS["Current Location"];
+    console.error("Could not parse point string:", pointString);
+    throw new Error(`Unable to resolve location: "${pointString}"`);
   }
-  
-  // If all else fails, use default
-  return LONDON_LOCATIONS["Current Location"];
+
+  // If all else fails, throw -- callers should provide valid coordinates
+  throw new Error(`Unable to resolve location: "${pointString}"`);
 }
 
 // Find the street name associated with a postcode
