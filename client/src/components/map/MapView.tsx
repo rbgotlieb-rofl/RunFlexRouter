@@ -86,8 +86,12 @@ export default function MapView({ routes, selectedRoute, onRouteSelect, userLoca
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${API_BASE}/api/config`)
-      .then(r => r.json())
+    const configUrl = `${API_BASE}/api/config`;
+    fetch(configUrl)
+      .then(r => {
+        if (!r.ok) throw new Error(`Config request failed: ${r.status}`);
+        return r.json();
+      })
       .then(config => {
         if (cancelled) return;
         if (config?.mapboxToken) {
@@ -99,13 +103,15 @@ export default function MapView({ routes, selectedRoute, onRouteSelect, userLoca
             if (width > 0 && height > 0) createMapRef.current();
           }
         } else {
-          setError('No Mapbox token available');
+          setError('No Mapbox token available. Check MAPBOX_ACCESS_TOKEN on server.');
           setLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
-          setError('Failed to load map configuration');
+          console.error(`Failed to fetch map config from ${configUrl}:`, err);
+          const hint = API_BASE ? '' : ' Is VITE_API_URL set for this build?';
+          setError(`Failed to load map configuration.${hint}`);
           setLoading(false);
         }
       });
@@ -332,7 +338,7 @@ export default function MapView({ routes, selectedRoute, onRouteSelect, userLoca
       <div className="w-full h-full flex items-center justify-center bg-gray-100 rounded-lg">
         <div className="text-center p-4">
           <p className="text-red-500 mb-2">Unable to load map</p>
-          <p className="text-sm text-gray-600">Please check your Mapbox API token configuration.</p>
+          <p className="text-sm text-gray-600">{error}</p>
         </div>
       </div>
     );
