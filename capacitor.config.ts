@@ -16,6 +16,10 @@ const config: CapacitorConfig = {
       backgroundColor: '#ffffff',
     },
   },
+  server: {
+    // Allow the WebView to reach the Railway backend
+    allowNavigation: ['runflexrouter-production.up.railway.app'],
+  },
   ios: {
     contentInset: 'automatic',
     allowsLinkPreview: false,
