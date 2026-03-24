@@ -4,6 +4,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { Route, Point } from '@shared/schema';
 import { addMapControls } from '@/lib/map-utils';
 import { addArrowLayer, addFlagLayers } from '@/lib/route-arrows';
+import { API_BASE } from '@/lib/api';
 
 interface MapViewProps {
   routes: Route[];
@@ -85,7 +86,7 @@ export default function MapView({ routes, selectedRoute, onRouteSelect, userLoca
   useEffect(() => {
     let cancelled = false;
 
-    fetch('/api/config')
+    fetch(`${API_BASE}/api/config`)
       .then(r => r.json())
       .then(config => {
         if (cancelled) return;

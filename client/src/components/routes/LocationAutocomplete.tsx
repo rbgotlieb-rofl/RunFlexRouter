@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { MapPin, Navigation, Crosshair, Loader2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
+import { API_BASE } from '@/lib/api';
 import { Point } from '@shared/schema';
 import { useToast } from '@/hooks/use-toast';
 import { useGeolocation } from '@/hooks/use-geolocation';
@@ -40,7 +41,7 @@ export default function LocationAutocomplete({
   const { data: suggestions = [], isLoading } = useQuery({
     queryKey: ['/api/locations', inputValue],
     queryFn: async () => {
-      const response = await fetch(`/api/locations?q=${encodeURIComponent(inputValue)}`);
+      const response = await fetch(`${API_BASE}/api/locations?q=${encodeURIComponent(inputValue)}`);
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
@@ -107,7 +108,7 @@ export default function LocationAutocomplete({
       });
 
       try {
-        const res = await fetch(`/api/reverse-geocode?lat=${pos.lat}&lng=${pos.lng}`);
+        const res = await fetch(`${API_BASE}/api/reverse-geocode?lat=${pos.lat}&lng=${pos.lng}`);
         if (res.ok) {
           const data = await res.json();
           if (data.name) {
