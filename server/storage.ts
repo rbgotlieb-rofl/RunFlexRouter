@@ -152,6 +152,7 @@ export class DatabaseStorage implements IStorage {
     const rows = await this.db
       .insert(savedRoutes)
       .values({
+        userId: route.userId,
         name: route.name,
         description: route.description,
         startPoint: route.startPoint,
@@ -214,6 +215,7 @@ export class DatabaseStorage implements IStorage {
   private mapSavedRouteToRoute(r: typeof savedRoutes.$inferSelect): Route {
     return {
       id: r.id,
+      userId: r.userId ?? undefined,
       name: r.name,
       description: r.description ?? undefined,
       startPoint: r.startPoint as { lat: number; lng: number },

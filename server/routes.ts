@@ -1083,6 +1083,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // --- Authenticated route saving ---
+
+  app.post("/api/routes/save", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const route = req.body;
+      if (!route || !route.name || !route.startPoint || !route.endPoint || route.distance == null) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+      const saved = await storage.saveRoute({
+        ...route,
+        userId: req.user!.id,
+      });
+      res.status(201).json(saved);
+    } catch (error) {
+      console.error("Error saving route:", error);
+      res.status(500).json({ message: "Error saving route" });
+    }
+  });
+
+  app.get("/api/routes/saved", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const routes = await storage.getRoutes();
+      // Filter to only this user's routes
+      const userRoutes = routes.filter((r: any) => r.userId === req.user!.id);
+      res.json(userRoutes);
+    } catch (error) {
+      console.error("Error fetching saved routes:", error);
+      res.status(500).json({ message: "Error fetching saved routes" });
+    }
+  });
+
   // HTTP server
   const httpServer = createServer(app);
   return httpServer;

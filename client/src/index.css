@@ -25,3 +25,26 @@
   position: relative;
   min-height: 140px;
 }
+
+/* Safe area insets for iOS notch / home indicator */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+
+/* On mobile with bottom nav, add space so content isn't hidden */
+@media (max-width: 767px) {
+  main {
+    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Prevent iOS WebView bounce/rubber-banding */
+html, body {
+  overscroll-behavior: none;
+}

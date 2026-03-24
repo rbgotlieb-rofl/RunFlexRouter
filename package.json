@@ -9,9 +9,13 @@
     "start": "NODE_ENV=production node dist/index.js",
     "build:ios": "VITE_API_URL=${VITE_API_URL:?'Set VITE_API_URL to your backend URL (e.g. https://your-app.up.railway.app)'} vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && npx cap sync ios",
     "check": "tsc",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/geolocation": "^8.1.0",
     "@hookform/resolvers": "^3.9.1",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@mapbox/mapbox-gl-geocoder": "^5.0.3",
