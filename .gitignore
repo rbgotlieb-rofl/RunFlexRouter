@@ -10,3 +10,5 @@ replit.nix
 replit.md
 generated-icon.png
 attached_assets/
+ios/
+android/

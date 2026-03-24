@@ -3,6 +3,25 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+
+// CORS — allow Capacitor iOS/Android apps and localhost dev to reach the API
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowed = [
+    'capacitor://localhost',  // iOS Capacitor
+    'http://localhost',       // Android Capacitor
+    'http://localhost:5173',  // Vite dev
+    'https://runflexrouter-production.up.railway.app', // Production
+  ];
+  if (origin && allowed.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -53,7 +72,6 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // IMPORTANT for Replit: use provided PORT, bind 0.0.0.0
   const PORT = Number(process.env.PORT) || 5000;
   server.listen(
     { port: PORT, host: "0.0.0.0", reusePort: true },
