@@ -24,7 +24,17 @@ async function main() {
   for (const file of files) {
     const content = readFileSync(join(migrationsDir, file), "utf-8");
     console.log(`  → ${file}`);
-    await sql(content);
+
+    // Neon serverless driver doesn't support multiple statements per call.
+    // Split on semicolons and run each statement individually.
+    const statements = content
+      .split(";")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith("--"));
+
+    for (const stmt of statements) {
+      await sql(stmt);
+    }
   }
 
   console.log("Migrations complete.");
