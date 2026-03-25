@@ -12,7 +12,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RouteMode } from "@shared/schema";
+import { RouteMode, Point } from "@shared/schema";
 
 interface RouteSearchProps {
   startPoint: string;
@@ -22,6 +22,7 @@ interface RouteSearchProps {
   targetDistance?: number;
   distanceUnit?: 'km' | 'miles';
   targetType?: 'duration' | 'distance';
+  userProximity?: Point | null;
   onStartPointChange: (value: string) => void;
   onEndPointChange: (value: string) => void;
   onRouteModeChange: (value: RouteMode) => void;
@@ -40,6 +41,7 @@ export default function RouteSearch({
   targetDistance = 5,
   distanceUnit = 'km',
   targetType = 'duration',
+  userProximity,
   onStartPointChange,
   onEndPointChange,
   onRouteModeChange,
@@ -91,7 +93,8 @@ export default function RouteSearch({
                   value={startPoint}
                   onChange={onStartPointChange}
                   placeholder="Starting location"
-                  showLocationOption={true} // Allow "Use my current location" for starting point
+                  showLocationOption={true}
+                  userProximity={userProximity}
                 />
               </div>
               
@@ -117,7 +120,8 @@ export default function RouteSearch({
                       value={endPoint}
                       onChange={onEndPointChange}
                       placeholder="Post code or landmark"
-                      showLocationOption={false} // Don't show "Use my current location" for destination
+                      showLocationOption={false}
+                      userProximity={userProximity}
                     />
                   </div>
                 </>

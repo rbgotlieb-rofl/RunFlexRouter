@@ -143,6 +143,7 @@ export default function HomePage() {
           targetDistance={targetDistance}
           distanceUnit={distanceUnit}
           targetType={targetType}
+          userProximity={userLocation}
           onStartPointChange={setStartPoint}
           onEndPointChange={setEndPoint}
           onRouteModeChange={(mode) => {

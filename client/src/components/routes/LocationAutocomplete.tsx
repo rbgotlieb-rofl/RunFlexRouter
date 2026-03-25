@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapPin, Navigation, Crosshair, Loader2 } from 'lucide-react';
+import { MapPin, Navigation, Crosshair, Loader2, ArrowLeft, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
 import { API_BASE } from '@/lib/api';
 import { Point } from '@shared/schema';
 import { useToast } from '@/hooks/use-toast';
 import { useGeolocation } from '@/hooks/use-geolocation';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface LocationSuggestion {
   name: string;
@@ -17,31 +17,49 @@ interface LocationAutocompleteProps {
   onChange: (value: string) => void;
   placeholder: string;
   showLocationOption?: boolean;
+  /** User's current lat/lng for proximity-biased results */
+  userProximity?: Point | null;
 }
 
 export default function LocationAutocomplete({
   value,
   onChange,
   placeholder,
-  showLocationOption = true
+  showLocationOption = true,
+  userProximity,
 }: LocationAutocompleteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value);
   const [isLocating, setIsLocating] = useState(false);
   const [usingCurrentLocation, setUsingCurrentLocation] = useState(false);
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  const [mobileExpanded, setMobileExpanded] = useState(false);
   const autocompleteRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const mobileInputRef = useRef<HTMLInputElement>(null);
   const justSelectedRef = useRef(false);
   const { toast } = useToast();
   const { getCurrentPosition, position: latestPosition } = useGeolocation();
+  const isMobile = useIsMobile();
 
   const isCurrentLocationValue = (val: string) =>
     val.startsWith("Your Location (") || val === "Current Location";
 
+  // Build proximity query string from user location
+  const proximityParam = userProximity
+    ? `${userProximity.lng},${userProximity.lat}`
+    : latestPosition
+    ? `${latestPosition.lng},${latestPosition.lat}`
+    : undefined;
+
   const { data: suggestions = [], isLoading } = useQuery({
-    queryKey: ['/api/locations', inputValue],
+    queryKey: ['/api/locations', inputValue, proximityParam],
     queryFn: async () => {
-      const response = await fetch(`${API_BASE}/api/locations?q=${encodeURIComponent(inputValue)}`);
+      let url = `${API_BASE}/api/locations?q=${encodeURIComponent(inputValue)}`;
+      if (proximityParam) {
+        url += `&proximity=${encodeURIComponent(proximityParam)}`;
+      }
+      const response = await fetch(url, { credentials: 'include' });
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
@@ -66,6 +84,7 @@ export default function LocationAutocomplete({
     setUsingCurrentLocation(false);
     setLocationLabel(null);
     setIsOpen(false);
+    if (mobileExpanded) setMobileExpanded(false);
     setTimeout(() => { justSelectedRef.current = false; }, 300);
   };
 
@@ -88,6 +107,7 @@ export default function LocationAutocomplete({
       setInputValue(locationString);
       onChange(locationString);
       setUsingCurrentLocation(true);
+      if (mobileExpanded) setMobileExpanded(false);
 
       const accM = Math.round(pos.accuracy);
       let description: string;
@@ -108,7 +128,7 @@ export default function LocationAutocomplete({
       });
 
       try {
-        const res = await fetch(`${API_BASE}/api/reverse-geocode?lat=${pos.lat}&lng=${pos.lng}`);
+        const res = await fetch(`${API_BASE}/api/reverse-geocode?lat=${pos.lat}&lng=${pos.lng}`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           if (data.name) {
@@ -171,16 +191,14 @@ export default function LocationAutocomplete({
   }, [value]);
 
   const handleBlur = () => {
+    if (mobileExpanded) return; // Don't blur in mobile expanded mode
     setTimeout(() => {
       if (justSelectedRef.current) return;
-      // If user focused a current-location input but didn't type anything,
-      // restore the saved location value instead of clearing startPoint
       if (inputValue === '' && savedLocationValueRef.current) {
         const saved = savedLocationValueRef.current;
         savedLocationValueRef.current = '';
         setInputValue(saved);
         setUsingCurrentLocation(isCurrentLocationValue(saved));
-        // Don't call onChange — parent's value hasn't changed
         return;
       }
       savedLocationValueRef.current = '';
@@ -192,32 +210,180 @@ export default function LocationAutocomplete({
 
   const handleFocus = () => {
     if (usingCurrentLocation || isCurrentLocationValue(inputValue)) {
-      // Save the current location value so we can restore it if user doesn't type
       savedLocationValueRef.current = inputValue || value;
       setInputValue('');
-      // Don't call onChange('') here — only propagate changes when user actually
-      // types or selects something. This prevents the map from going blank on
-      // accidental focus (mobile scroll jitter, toast appearance, etc.)
       setUsingCurrentLocation(false);
       setLocationLabel(null);
     }
     setIsOpen(true);
+
+    // On mobile, expand to full-screen overlay
+    if (isMobile && !mobileExpanded) {
+      setMobileExpanded(true);
+    }
   };
+
+  const handleMobileClose = () => {
+    setMobileExpanded(false);
+    setIsOpen(false);
+    // Restore saved value if user didn't select anything
+    if (inputValue === '' && savedLocationValueRef.current) {
+      const saved = savedLocationValueRef.current;
+      savedLocationValueRef.current = '';
+      setInputValue(saved);
+      setUsingCurrentLocation(isCurrentLocationValue(saved));
+    }
+  };
+
+  const handleClearInput = () => {
+    setInputValue('');
+    setUsingCurrentLocation(false);
+    setLocationLabel(null);
+    if (mobileExpanded && mobileInputRef.current) {
+      mobileInputRef.current.focus();
+    }
+  };
+
+  // Focus the mobile input when expanded
+  useEffect(() => {
+    if (mobileExpanded && mobileInputRef.current) {
+      setTimeout(() => mobileInputRef.current?.focus(), 100);
+    }
+  }, [mobileExpanded]);
 
   const displayValue = usingCurrentLocation ? '' : inputValue;
   const showCurrentLocationLabel = usingCurrentLocation || isCurrentLocationValue(inputValue);
 
+  const renderSuggestionsList = (onSelect: typeof handleSelectSuggestion) => (
+    <>
+      {showLocationOption && (
+        <div
+          className="p-3 cursor-pointer hover:bg-blue-50 text-sm border-b active:bg-blue-100"
+          onMouseDown={(e) => { e.preventDefault(); handleUseMyLocation(); }}
+          onTouchEnd={(e) => { e.preventDefault(); handleUseMyLocation(); }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Navigation size={16} className="text-blue-500" />
+              <span className="text-blue-600 font-medium">Use my current location</span>
+            </div>
+            {isLocating && (
+              <span className="flex items-center gap-1 text-xs text-gray-500">
+                <Loader2 size={12} className="animate-spin" />
+                Locating...
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {inputValue.length > 0 && !isCurrentLocationValue(inputValue) && (
+        <>
+          {isLoading ? (
+            <div className="p-3 text-sm text-gray-500 flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin" />
+              Searching nearby...
+            </div>
+          ) : Array.isArray(suggestions) && suggestions.length > 0 ? (
+            suggestions.map((suggestion: LocationSuggestion, index: number) => (
+              <div
+                key={index}
+                className="p-3 cursor-pointer hover:bg-gray-100 active:bg-gray-200 text-sm"
+                onMouseDown={(e) => { e.preventDefault(); onSelect(suggestion); }}
+                onTouchEnd={(e) => { e.preventDefault(); onSelect(suggestion); }}
+              >
+                <div className="flex items-center gap-2">
+                  <MapPin size={16} className="text-gray-400 flex-shrink-0" />
+                  <span className="truncate">{suggestion.name}</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-3 text-sm text-gray-500">
+              No locations found. Try a city name, address, or postcode.
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+
+  // Mobile full-screen overlay
+  if (mobileExpanded && isMobile) {
+    return (
+      <>
+        {/* Keep the original input in place (hidden behind overlay) */}
+        <div className="relative" ref={autocompleteRef}>
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              readOnly
+              placeholder={placeholder}
+              value=""
+              className="w-full py-2 pl-3 pr-4 border rounded-lg bg-gray-50"
+            />
+          </div>
+        </div>
+
+        {/* Full-screen overlay */}
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+          {/* Header */}
+          <div className="flex items-center gap-2 p-3 border-b bg-white safe-area-top">
+            <button
+              type="button"
+              onClick={handleMobileClose}
+              className="p-2 -ml-1 rounded-full hover:bg-gray-100 active:bg-gray-200"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div className="flex-1 relative">
+              <input
+                ref={mobileInputRef}
+                type="text"
+                placeholder={showCurrentLocationLabel ? (locationLabel || 'My current location') : placeholder}
+                value={displayValue}
+                onChange={handleInputChange}
+                className={`w-full py-3 px-4 text-base border rounded-xl focus:border-primary focus:outline-none bg-gray-50 ${
+                  showCurrentLocationLabel ? 'placeholder:text-blue-600 placeholder:font-medium' : ''
+                }`}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              {inputValue.length > 0 && !isCurrentLocationValue(inputValue) && (
+                <button
+                  type="button"
+                  onClick={handleClearInput}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-200"
+                >
+                  <X size={16} className="text-gray-400" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Suggestions list */}
+          <div className="flex-1 overflow-y-auto">
+            {renderSuggestionsList(handleSelectSuggestion)}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Desktop / non-expanded view
   return (
     <div className="relative" ref={autocompleteRef}>
       <div className="relative flex items-center">
         <input
+          ref={inputRef}
           type="text"
           placeholder={showCurrentLocationLabel ? (locationLabel || 'My current location') : placeholder}
           value={displayValue}
           onChange={handleInputChange}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          className={`w-full py-2 pl-3 border rounded-lg focus:border-primary focus:outline-none ${
+          className={`w-full py-2.5 pl-3 border rounded-lg focus:border-primary focus:outline-none text-base ${
             showLocationOption ? 'pr-10' : 'pr-4'
           } ${showCurrentLocationLabel ? 'placeholder:text-blue-600 placeholder:font-medium' : ''}`}
         />
@@ -236,9 +402,9 @@ export default function LocationAutocomplete({
             title="Use my current location"
           >
             {isLocating ? (
-              <Loader2 size={16} className="animate-spin" />
+              <Loader2 size={18} className="animate-spin" />
             ) : (
-              <Crosshair size={16} />
+              <Crosshair size={18} />
             )}
           </button>
         )}
@@ -246,52 +412,7 @@ export default function LocationAutocomplete({
 
       {isOpen && (
         <div className="absolute z-30 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-          {showLocationOption && (
-            <div
-              className="p-2 cursor-pointer hover:bg-blue-50 text-sm border-b"
-              onMouseDown={(e) => { e.preventDefault(); handleUseMyLocation(); }}
-              onTouchEnd={(e) => { e.preventDefault(); handleUseMyLocation(); }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Navigation size={14} className="text-blue-500" />
-                  <span className="text-blue-600 font-medium">Use my current location</span>
-                </div>
-                {isLocating && (
-                  <span className="flex items-center gap-1 text-xs text-gray-500">
-                    <Loader2 size={12} className="animate-spin" />
-                    Locating...
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {inputValue.length > 0 && !isCurrentLocationValue(inputValue) && (
-            <>
-              {isLoading ? (
-                <div className="p-2 text-sm text-gray-500">Loading...</div>
-              ) : Array.isArray(suggestions) && suggestions.length > 0 ? (
-                suggestions.map((suggestion: LocationSuggestion, index: number) => (
-                  <div
-                    key={index}
-                    className="p-2 cursor-pointer hover:bg-gray-100 text-sm"
-                    onMouseDown={(e) => { e.preventDefault(); handleSelectSuggestion(suggestion); }}
-                    onTouchEnd={(e) => { e.preventDefault(); handleSelectSuggestion(suggestion); }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <MapPin size={14} className="text-gray-400" />
-                      <span>{suggestion.name}</span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-2 text-sm text-gray-500">
-                  No locations found. Try a city name, address, or postcode.
-                </div>
-              )}
-            </>
-          )}
+          {renderSuggestionsList(handleSelectSuggestion)}
         </div>
       )}
     </div>
