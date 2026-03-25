@@ -1,5 +1,6 @@
 /**
  * Run SQL migrations against the database.
+ * Each .sql file should contain exactly ONE statement (no semicolons needed).
  * Usage: DATABASE_URL=... npx tsx scripts/migrate.ts
  */
 import { neon } from "@neondatabase/serverless";
@@ -22,19 +23,10 @@ async function main() {
   console.log(`Running ${files.length} migration(s)...`);
 
   for (const file of files) {
-    const content = readFileSync(join(migrationsDir, file), "utf-8");
+    const content = readFileSync(join(migrationsDir, file), "utf-8").trim();
+    if (!content || content.startsWith("--")) continue;
     console.log(`  → ${file}`);
-
-    // Neon serverless driver doesn't support multiple statements per call.
-    // Split on semicolons and run each statement individually.
-    const statements = content
-      .split(";")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !s.startsWith("--"));
-
-    for (const stmt of statements) {
-      await sql(stmt);
-    }
+    await sql(content);
   }
 
   console.log("Migrations complete.");
