@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { Route, RouteFeature, Point } from "@shared/schema";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Heart, Share2, Map, Navigation, Watch, ArrowLeft } from "lucide-react";
+import { Heart, Share2, Map, Navigation, Watch, ArrowLeft, Loader2 } from "lucide-react";
 import { getFeatureIcon, getRouteTypeLabel, getRouteTypeColor } from "@/lib/route-utils";
 import RouteDirections from "./RouteDirections";
 import RouteMapPreview from "../map/RouteMapPreview";
 import { useToast } from "@/hooks/use-toast";
+import { API_BASE } from "@/lib/api";
 import { FaSpotify } from "react-icons/fa";
 import { SiApplemusic } from "react-icons/si";
 interface RouteDetailSheetProps {
@@ -21,11 +22,35 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
   const [isMounted, setIsMounted] = useState(false);
   const [sendingToWatch, setSendingToWatch] = useState(false);
   const [activePlaylist, setActivePlaylist] = useState<'spotify' | 'apple' | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const { toast } = useToast();
-  
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  const handleSaveRoute = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/routes/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(route),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to save route");
+      }
+      setIsSaved(true);
+      toast({ title: "Route saved!", description: "You can find it in your saved routes." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
   
   // Function to toggle music playlist provider
   const togglePlaylist = (provider: 'spotify' | 'apple') => {
@@ -311,8 +336,9 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
               
                 {/* Secondary actions */}
                 <div className="flex gap-3 mb-4">
-                  <Button variant="outline" className="flex-1">
-                    <Heart className="h-4 w-4 mr-2" /> Save
+                  <Button variant="outline" className="flex-1" onClick={handleSaveRoute} disabled={isSaving || isSaved}>
+                    {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Heart className={`h-4 w-4 mr-2 ${isSaved ? "fill-red-500 text-red-500" : ""}`} />}
+                    {isSaved ? "Saved" : "Save"}
                   </Button>
                   <Button variant="outline" className="flex-1">
                     <Share2 className="h-4 w-4 mr-2" /> Share

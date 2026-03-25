@@ -15,6 +15,9 @@ const config: CapacitorConfig = {
       style: 'LIGHT',
       backgroundColor: '#ffffff',
     },
+    Geolocation: {
+      // iOS requires these keys in Info.plist (set via Xcode or manually)
+    },
   },
   server: {
     // Allow the WebView to reach the Railway backend
@@ -24,6 +27,7 @@ const config: CapacitorConfig = {
     contentInset: 'automatic',
     allowsLinkPreview: false,
     backgroundColor: '#ffffff',
+    // Prefer WKWebView (default in Capacitor 4+)
   },
 };
 

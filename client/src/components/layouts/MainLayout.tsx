@@ -1,7 +1,8 @@
 import React from "react";
 import Sidebar from "@/components/sidebar/Sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Home, Clock, User, Settings } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { Home, Clock, User, LogOut } from "lucide-react";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -9,37 +10,41 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
   const isMobile = useIsMobile();
-  
+  const { user, logout } = useAuth();
+
   return (
     <div className="flex flex-col md:flex-row h-screen">
       {/* Sidebar for desktop */}
       {!isMobile && <Sidebar />}
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* Main content — add bottom padding on mobile to avoid bottom nav overlap */}
+      <main className="flex-1 flex flex-col h-full overflow-hidden pb-safe">
         {children}
       </main>
 
-      {/* Mobile bottom navigation */}
+      {/* Mobile bottom navigation — safe area aware */}
       {isMobile && (
-        <nav className="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 z-20">
-          <div className="flex justify-around items-center h-16">
-            <a href="#" className="flex flex-col items-center text-primary">
+        <nav className="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 z-20 pb-safe">
+          <div className="flex justify-around items-center h-14">
+            <a href="/" className="flex flex-col items-center text-primary">
               <Home className="h-5 w-5" />
-              <span className="text-xs mt-1">Routes</span>
+              <span className="text-xs mt-0.5">Routes</span>
             </a>
-            <a href="#" className="flex flex-col items-center text-neutral-700">
+            <a href="#" className="flex flex-col items-center text-neutral-500">
               <Clock className="h-5 w-5" />
-              <span className="text-xs mt-1">History</span>
+              <span className="text-xs mt-0.5">History</span>
             </a>
-            <a href="#" className="flex flex-col items-center text-neutral-700">
+            <a href="#" className="flex flex-col items-center text-neutral-500">
               <User className="h-5 w-5" />
-              <span className="text-xs mt-1">Profile</span>
+              <span className="text-xs mt-0.5">{user?.username?.split("@")[0] || "Profile"}</span>
             </a>
-            <a href="#" className="flex flex-col items-center text-neutral-700">
-              <Settings className="h-5 w-5" />
-              <span className="text-xs mt-1">Settings</span>
-            </a>
+            <button
+              onClick={() => logout()}
+              className="flex flex-col items-center text-neutral-500"
+            >
+              <LogOut className="h-5 w-5" />
+              <span className="text-xs mt-0.5">Logout</span>
+            </button>
           </div>
         </nav>
       )}

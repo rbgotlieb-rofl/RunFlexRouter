@@ -112,6 +112,7 @@ export type Point = z.infer<typeof pointSchema>;
 // Additional types needed by route generator
 export type Route = {
   id: number;
+  userId?: number;
   name: string;
   description?: string;
   startPoint: Point;
