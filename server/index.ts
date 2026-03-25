@@ -79,7 +79,7 @@ app.use((req, res, next) => {
 
   const PORT = Number(process.env.PORT) || 5000;
   server.listen(
-    { port: PORT, host: "0.0.0.0", reusePort: true },
+    { port: PORT, host: "0.0.0.0" },
     () => log(`[express] serving on port ${PORT}`)
   );
 })();
