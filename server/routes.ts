@@ -1130,9 +1130,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Authentication required" });
       }
-      const routes = await storage.getRoutes();
-      // Filter to only this user's routes
-      const userRoutes = routes.filter((r: any) => r.userId === req.user!.id);
+      const userRoutes = await storage.getRoutesByUserId(req.user!.id);
       res.json(userRoutes);
     } catch (error) {
       console.error("Error fetching saved routes:", error);

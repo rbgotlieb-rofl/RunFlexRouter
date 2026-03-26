@@ -22,6 +22,7 @@ export interface IStorage {
   getRoutesByPoints(startPoint: string, endPoint: string): Promise<Route[]>;
   saveRoute(route: Route): Promise<Route>;
   deleteRoute(id: number, userId: number): Promise<void>;
+  getRoutesByUserId(userId: number): Promise<Route[]>;
 
   savePreferences(prefs: Partial<RoutePreferences>): Promise<RoutePreferences>;
   getPreferences(userId?: number): Promise<RoutePreferences | undefined>;
@@ -84,6 +85,10 @@ export class MemStorage implements IStorage {
     if (route && (route as any).userId === userId) {
       this.routes.delete(id);
     }
+  }
+
+  async getRoutesByUserId(userId: number): Promise<Route[]> {
+    return Array.from(this.routes.values()).filter((r: any) => r.userId === userId);
   }
 
   async savePreferences(prefs: Partial<RoutePreferences>): Promise<RoutePreferences> {
@@ -186,6 +191,14 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(eq(savedRoutes.id, id), eq(savedRoutes.userId, userId))
       );
+  }
+
+  async getRoutesByUserId(userId: number): Promise<Route[]> {
+    const rows = await this.db
+      .select()
+      .from(savedRoutes)
+      .where(eq(savedRoutes.userId, userId));
+    return rows.map((r) => this.mapSavedRouteToRoute(r));
   }
 
   async savePreferences(prefs: Partial<RoutePreferences>): Promise<RoutePreferences> {

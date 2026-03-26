@@ -21,6 +21,7 @@ export default function SavedRoutesPage() {
       if (!res.ok) throw new Error("Failed to fetch saved routes");
       return res.json();
     },
+    staleTime: 0, // Always refetch when navigating to this page
   });
 
   const handleDeleteRoute = async (routeId: number, e: React.MouseEvent) => {
