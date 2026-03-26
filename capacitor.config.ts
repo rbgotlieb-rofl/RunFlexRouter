@@ -24,10 +24,10 @@ const config: CapacitorConfig = {
     allowNavigation: ['runflexrouter-production.up.railway.app'],
   },
   ios: {
-    contentInset: 'automatic',
+    contentInset: 'never',
     allowsLinkPreview: false,
     backgroundColor: '#ffffff',
-    // Prefer WKWebView (default in Capacitor 4+)
+    preferredContentMode: 'mobile',
   },
 };
 

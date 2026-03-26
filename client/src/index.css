@@ -33,6 +33,16 @@
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+.pl-safe {
+  padding-left: env(safe-area-inset-left);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right);
+}
+.px-safe {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
 .mb-safe {
   margin-bottom: env(safe-area-inset-bottom);
 }
@@ -47,4 +57,11 @@
 /* Prevent iOS WebView bounce/rubber-banding */
 html, body {
   overscroll-behavior: none;
+}
+
+/* Ensure the app viewport respects all safe area edges (Dynamic Island, etc.) */
+#root {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  min-height: 100vh;
 }
