@@ -21,7 +21,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen pt-safe">
+    <div className="flex flex-col md:flex-row h-screen">
       {/* Sidebar for desktop */}
       {!isMobile && <Sidebar />}
 
