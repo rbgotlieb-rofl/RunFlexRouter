@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import MainLayout from "@/components/layouts/MainLayout";
 import RouteSearch from "@/components/routes/RouteSearch";
 import RouteCard from "@/components/routes/RouteCard";
-import RouteFilters from "@/components/routes/RouteFilters";
+import RouteFilters, { applyClientFilters, EMPTY_FILTERS } from "@/components/routes/RouteFilters";
 import RoutePreferences from "@/components/routes/RoutePreferences";
 import RouteDetailSheet from "@/components/routes/RouteDetailSheet";
 import MapView from "@/components/map/MapView";
@@ -33,6 +33,7 @@ export default function HomePage() {
     targetDistance: 5,
     targetDuration: 30,
   });
+  const [clientFilters, setClientFilters] = useState(EMPTY_FILTERS);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   const userLocation = useMemo((): Point | null => {
@@ -62,6 +63,12 @@ export default function HomePage() {
     refetch 
   } = useRoutes(startPoint, endPoint, filters);
 
+  // Client-side filtered routes (filters applied AFTER loading, not re-fetching)
+  const filteredRoutes = useMemo(() => {
+    if (!routes) return undefined;
+    return applyClientFilters(routes, clientFilters);
+  }, [routes, clientFilters]);
+
   const [searchTrigger, setSearchTrigger] = useState(0);
 
   useEffect(() => {
@@ -81,6 +88,7 @@ export default function HomePage() {
     };
 
     setFilters(updatedFilters);
+    setClientFilters(EMPTY_FILTERS); // Reset client-side filters on new search
     setSearchTrigger(prev => prev + 1);
     // On mobile, switch to list view so the user sees the results
     if (windowWidth < 768) {
@@ -225,16 +233,13 @@ export default function HomePage() {
               ${viewMode === "list" ? "block" : "hidden md:block"}
             `}
           >
-            {/* Filter chips */}
+            {/* Filter chips — client-side filtering on already-loaded routes */}
             {routes && routes.length > 0 && (
               <RouteFilters
                 totalRoutes={routes.length}
-                filters={filters}
-                onFilterChange={(newFilters) => {
-                  handleFilterChange(newFilters);
-                  // Re-trigger search with updated filters
-                  setSearchTrigger(prev => prev + 1);
-                }}
+                filteredCount={filteredRoutes?.length ?? 0}
+                activeFilters={clientFilters}
+                onFiltersChange={setClientFilters}
               />
             )}
 
@@ -268,21 +273,23 @@ export default function HomePage() {
                       : 'There was an error loading routes. Please try again.'}
                   </AlertDescription>
                 </Alert>
-              ) : routes?.length === 0 ? (
+              ) : filteredRoutes?.length === 0 ? (
                 // Empty state
                 <div className="text-center py-8">
                   <MapPin className="h-12 w-12 mx-auto text-gray-400 mb-2" />
                   <h3 className="text-lg font-medium text-gray-900">No Routes Found</h3>
                   <p className="text-sm text-gray-500 mt-1">
-                    Try changing your search criteria or filters
+                    {clientFilters.features.length > 0 || clientFilters.surfaceType
+                      ? "No routes match your filters. Try removing some filters."
+                      : "Try changing your search criteria or filters"}
                   </p>
                 </div>
               ) : (
                 // Routes list
-                routes?.map((route, index) => (
-                  <RouteCard 
-                    key={route.id} 
-                    route={route} 
+                filteredRoutes?.map((route, index) => (
+                  <RouteCard
+                    key={route.id}
+                    route={route}
                     routeNumber={index + 1}
                     onClick={() => handleRouteSelect(route)}
                     userLocation={userLocation}
