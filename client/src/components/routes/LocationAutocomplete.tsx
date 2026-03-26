@@ -96,13 +96,13 @@ export default function LocationAutocomplete({
       const accM = Math.round(pos.accuracy);
       let description: string;
       if (accM <= 50) {
-        description = `Using your current location. High accuracy (±${accM}m).`;
+        description = `Using your current location. High accuracy (\u00b1${accM}m).`;
       } else if (accM <= 500) {
-        description = `Using your current location. Good accuracy (±${accM}m).`;
+        description = `Using your current location. Good accuracy (\u00b1${accM}m).`;
       } else if (accM <= 5000) {
-        description = `Using your approximate location (±${(accM / 1000).toFixed(1)}km). For better accuracy, try on a phone with GPS enabled.`;
+        description = `Using your approximate location (\u00b1${(accM / 1000).toFixed(1)}km). For better accuracy, try on a phone with GPS enabled.`;
       } else {
-        description = `Using your approximate location (±${(accM / 1000).toFixed(0)}km). Your browser is using IP-based location. For precise results, use a phone with GPS or enter a postcode.`;
+        description = `Using your approximate location (\u00b1${(accM / 1000).toFixed(0)}km). Your browser is using IP-based location. For precise results, use a phone with GPS or enter a postcode.`;
       }
 
       toast({
@@ -146,7 +146,7 @@ export default function LocationAutocomplete({
       const prevAcc = prevAccuracyRef.current;
 
       if (prevAcc && prevAcc > 500 && newAcc < prevAcc * 0.5) {
-        const accText = newAcc < 50 ? `High accuracy (±${newAcc}m)` : `Improved accuracy (±${newAcc < 1000 ? `${newAcc}m` : `${(newAcc / 1000).toFixed(1)}km`})`;
+        const accText = newAcc < 50 ? `High accuracy (\u00b1${newAcc}m)` : `Improved accuracy (\u00b1${newAcc < 1000 ? `${newAcc}m` : `${(newAcc / 1000).toFixed(1)}km`})`;
         toast({
           title: "Location refined",
           description: `GPS lock improved. ${accText}.`,
@@ -184,7 +184,7 @@ export default function LocationAutocomplete({
         savedLocationValueRef.current = '';
         setInputValue(saved);
         setUsingCurrentLocation(isCurrentLocationValue(saved));
-        // Don't call onChange — parent's value hasn't changed
+        // Don't call onChange \u2014 parent's value hasn't changed
         return;
       }
       savedLocationValueRef.current = '';
@@ -199,7 +199,7 @@ export default function LocationAutocomplete({
       // Save the current location value so we can restore it if user doesn't type
       savedLocationValueRef.current = inputValue || value;
       setInputValue('');
-      // Don't call onChange('') here — only propagate changes when user actually
+      // Don't call onChange('') here \u2014 only propagate changes when user actually
       // types or selects something. This prevents the map from going blank on
       // accidental focus (mobile scroll jitter, toast appearance, etc.)
       setUsingCurrentLocation(false);

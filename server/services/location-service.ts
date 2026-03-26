@@ -38,7 +38,7 @@ export async function searchLocations(query: string, proximity?: string): Promis
       const lng = parseFloat(lngStr);
       const lat = parseFloat(latStr);
       if (!isNaN(lng) && !isNaN(lat)) {
-        // ~1 degree ≈ 111 km; use ±1 degree for a roughly 200 km box
+        // ~1 degree \u2248 111 km; use \u00b11 degree for a roughly 200 km box
         const delta = 1;
         params.set('bbox', `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`);
       }
