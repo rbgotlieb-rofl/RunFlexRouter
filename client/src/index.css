@@ -47,10 +47,25 @@
   margin-bottom: env(safe-area-inset-bottom);
 }
 
+/* Native Capacitor app: env() safe-area values return 0 with contentInset:'never',
+   so use fixed values matching modern iPhone safe areas */
+html.native-app .pt-safe {
+  padding-top: 59px;
+}
+html.native-app .pb-safe {
+  padding-bottom: 34px;
+}
+html.native-app .mb-safe {
+  margin-bottom: 34px;
+}
+
 /* On mobile with bottom nav, add space so content isn't hidden */
 @media (max-width: 767px) {
   main {
     padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  }
+  html.native-app main {
+    padding-bottom: calc(3.5rem + 34px);
   }
 }
 
