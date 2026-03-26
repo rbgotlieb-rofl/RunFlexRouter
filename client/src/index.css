@@ -27,18 +27,23 @@
 }
 
 /* Safe area insets for iOS notch / home indicator.
-   Uses both constant() (iOS 11.0-11.2) and env() (iOS 11.2+). */
+   Uses max() to guarantee minimum padding for Dynamic Island iPhones,
+   even if env() returns an unexpectedly small value. */
 .pt-safe {
-  padding-top: constant(safe-area-inset-top) !important;
-  padding-top: env(safe-area-inset-top) !important;
+  padding-top: max(env(safe-area-inset-top, 0px), 54px) !important;
 }
 .pb-safe {
-  padding-bottom: constant(safe-area-inset-bottom) !important;
-  padding-bottom: env(safe-area-inset-bottom) !important;
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px) !important;
 }
 .mb-safe {
-  margin-bottom: constant(safe-area-inset-bottom) !important;
-  margin-bottom: env(safe-area-inset-bottom) !important;
+  margin-bottom: max(env(safe-area-inset-bottom, 0px), 20px) !important;
+}
+
+/* On desktop browsers, override the mobile minimums */
+@media (min-width: 768px) {
+  .pt-safe { padding-top: 0 !important; }
+  .pb-safe { padding-bottom: 0 !important; }
+  .mb-safe { margin-bottom: 0 !important; }
 }
 
 /* On mobile with bottom nav, add space so content isn't hidden */
