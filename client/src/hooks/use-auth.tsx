@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null;
       }
     },
-    staleTime: Infinity,
+    staleTime: 5 * 60 * 1000, // Re-check auth every 5 minutes
     retry: false,
   });
 

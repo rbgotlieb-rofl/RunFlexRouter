@@ -1,6 +1,7 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
+import pgSimple from "connect-pg-simple";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
@@ -35,13 +36,30 @@ declare global {
 }
 
 export function setupAuth(app: Express): void {
-  const MemoryStore = createMemoryStore(session);
+  // Use PostgreSQL session store if DATABASE_URL is available (persists across deploys),
+  // otherwise fall back to MemoryStore for local dev
+  let store: session.Store;
+  const dbUrl = process.env.DATABASE_URL;
+
+  if (dbUrl) {
+    const PgStore = pgSimple(session);
+    store = new PgStore({
+      conString: dbUrl,
+      tableName: "session",
+      createTableIfMissing: true,
+    });
+    console.log("Using PostgreSQL session store (sessions persist across deploys)");
+  } else {
+    const MemoryStore = createMemoryStore(session);
+    store = new MemoryStore({ checkPeriod: 86400000 });
+    console.log("Using MemoryStore for sessions (dev mode — sessions lost on restart)");
+  }
 
   const sessionMiddleware = session({
     secret: process.env.SESSION_SECRET || "runflex-dev-secret",
     resave: false,
     saveUninitialized: false,
-    store: new MemoryStore({ checkPeriod: 86400000 }),
+    store,
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       secure: false, // Allow http for Capacitor
