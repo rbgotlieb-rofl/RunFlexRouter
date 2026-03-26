@@ -11,20 +11,18 @@ const config: CapacitorConfig = {
       splashFullScreen: false,
       splashImmersive: false,
     },
-    StatusBar: {
-      style: 'DARK',
-      overlaysWebView: true,
-    },
     Geolocation: {
       // iOS requires these keys in Info.plist (set via Xcode or manually)
     },
+    // StatusBar plugin removed — iOS WebView is always edge-to-edge.
+    // Adding StatusBar config can interfere with safe area inset reporting.
   },
   server: {
-    // Allow the WebView to reach the Railway backend
     allowNavigation: ['runflexrouter-production.up.railway.app'],
   },
   ios: {
-    contentInset: 'automatic',
+    // No contentInset — the default lets viewport-fit=cover work correctly,
+    // making env(safe-area-inset-*) return proper values for all iPhone models.
     allowsLinkPreview: false,
     backgroundColor: '#ffffff',
     preferredContentMode: 'mobile',

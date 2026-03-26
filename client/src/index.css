@@ -26,30 +26,23 @@
   min-height: 140px;
 }
 
-/* Safe area insets for iOS notch / home indicator.
-   Uses max() to guarantee minimum padding for Dynamic Island iPhones,
-   even if env() returns an unexpectedly small value. */
+/* Safe area insets for iOS notch / Dynamic Island / home indicator.
+   With viewport-fit=cover in the HTML meta tag and NO contentInset override
+   in capacitor.config.ts, env() returns correct device-specific values
+   on ALL iPhone models (15, 15+, 16, 16 Pro, 17 Pro, SE, etc.). */
 .pt-safe {
-  padding-top: max(env(safe-area-inset-top, 0px), 54px) !important;
+  padding-top: env(safe-area-inset-top, 0px);
 }
 .pb-safe {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px) !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .mb-safe {
-  margin-bottom: max(env(safe-area-inset-bottom, 0px), 20px) !important;
-}
-
-/* On desktop browsers, override the mobile minimums */
-@media (min-width: 768px) {
-  .pt-safe { padding-top: 0 !important; }
-  .pb-safe { padding-bottom: 0 !important; }
-  .mb-safe { margin-bottom: 0 !important; }
+  margin-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* On mobile with bottom nav, add space so content isn't hidden */
 @media (max-width: 767px) {
   main {
-    padding-bottom: calc(3.5rem + constant(safe-area-inset-bottom, 0px));
     padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
@@ -59,8 +52,6 @@ html, body {
   overscroll-behavior: none;
 }
 
-/* Root container — do NOT add horizontal safe-area padding here
-   as it causes horizontal offset on some iPhone models (e.g. 16 Pro) */
 #root {
   min-height: 100vh;
 }
