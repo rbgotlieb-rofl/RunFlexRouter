@@ -6,6 +6,8 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import NotFoundPage from "@/pages/NotFoundPage";
 import HomePage from "@/pages/HomePage";
 import AuthPage from "@/pages/AuthPage";
+import SavedRoutesPage from "@/pages/SavedRoutesPage";
+import ProfilePage from "@/pages/ProfilePage";
 import { Loader2 } from "lucide-react";
 
 function Router() {
@@ -26,6 +28,8 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={HomePage} />
+      <Route path="/saved" component={SavedRoutesPage} />
+      <Route path="/profile" component={ProfilePage} />
       <Route component={NotFoundPage} />
     </Switch>
   );

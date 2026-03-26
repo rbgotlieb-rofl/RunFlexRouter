@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import {
   users,
   savedRoutes,
@@ -21,6 +21,7 @@ export interface IStorage {
   getRoutes(): Promise<Route[]>;
   getRoutesByPoints(startPoint: string, endPoint: string): Promise<Route[]>;
   saveRoute(route: Route): Promise<Route>;
+  deleteRoute(id: number, userId: number): Promise<void>;
 
   savePreferences(prefs: Partial<RoutePreferences>): Promise<RoutePreferences>;
   getPreferences(userId?: number): Promise<RoutePreferences | undefined>;
@@ -76,6 +77,13 @@ export class MemStorage implements IStorage {
     const newRoute = { ...route, id };
     this.routes.set(id, newRoute);
     return newRoute;
+  }
+
+  async deleteRoute(id: number, userId: number): Promise<void> {
+    const route = this.routes.get(id);
+    if (route && (route as any).userId === userId) {
+      this.routes.delete(id);
+    }
   }
 
   async savePreferences(prefs: Partial<RoutePreferences>): Promise<RoutePreferences> {
@@ -169,6 +177,14 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return this.mapSavedRouteToRoute(rows[0]);
+  }
+
+  async deleteRoute(id: number, userId: number): Promise<void> {
+    await this.db
+      .delete(savedRoutes)
+      .where(
+        and(eq(savedRoutes.id, id), eq(savedRoutes.userId, userId))
+      );
   }
 
   async savePreferences(prefs: Partial<RoutePreferences>): Promise<RoutePreferences> {

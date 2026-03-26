@@ -1,9 +1,15 @@
-import { Home, Clock, User, Settings } from "lucide-react";
+import { Home, Heart, User, Settings } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 export default function Sidebar() {
   const [location] = useLocation();
-  
+
+  const navItems = [
+    { href: "/", icon: Home, label: "Routes" },
+    { href: "/saved", icon: Heart, label: "Saved Routes" },
+    { href: "/profile", icon: User, label: "Profile" },
+  ];
+
   return (
     <aside className="w-64 bg-white border-r border-gray-200 p-4">
       <div className="flex items-center mb-6">
@@ -12,28 +18,21 @@ export default function Sidebar() {
         </div>
         <span className="ml-2 text-xl font-semibold">RunFlex</span>
       </div>
-      
+
       <nav className="space-y-2">
-        <Link href="/">
-          <a className={`flex items-center p-2 rounded-lg hover:bg-neutral-100 ${location === '/' ? 'text-primary' : 'text-neutral-700'}`}>
-            <Home className="w-5 h-5 mr-2" />
-            <span>Routes</span>
-          </a>
-        </Link>
-        <a href="#" className="flex items-center p-2 text-neutral-700 rounded-lg hover:bg-neutral-100">
-          <Clock className="w-5 h-5 mr-2" />
-          <span>History</span>
-        </a>
-        <a href="#" className="flex items-center p-2 text-neutral-700 rounded-lg hover:bg-neutral-100">
-          <User className="w-5 h-5 mr-2" />
-          <span>Profile</span>
-        </a>
-        <a href="#" className="flex items-center p-2 text-neutral-700 rounded-lg hover:bg-neutral-100">
-          <Settings className="w-5 h-5 mr-2" />
-          <span>Settings</span>
-        </a>
+        {navItems.map((item) => {
+          const isActive = location === item.href;
+          return (
+            <Link key={item.href} href={item.href}>
+              <a className={`flex items-center p-2 rounded-lg hover:bg-neutral-100 ${isActive ? 'text-primary' : 'text-neutral-700'}`}>
+                <item.icon className="w-5 h-5 mr-2" />
+                <span>{item.label}</span>
+              </a>
+            </Link>
+          );
+        })}
       </nav>
-      
+
       <div className="mt-6 border-t border-gray-200 pt-4">
         <div className="text-sm text-neutral-700 mb-2 font-medium">Your Preferences</div>
         <div className="space-y-4">
