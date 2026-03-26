@@ -29,9 +29,19 @@ export async function searchLocations(query: string, proximity?: string): Promis
       limit: '8',
     });
 
-    // If the user has a location, bias results towards it
+    // If the user has a location, bias results towards it and restrict to
+    // a reasonable area (~100 km bounding box) so results from other
+    // countries/continents don't appear.
     if (proximity) {
       params.set('proximity', proximity);
+      const [lngStr, latStr] = proximity.split(',');
+      const lng = parseFloat(lngStr);
+      const lat = parseFloat(latStr);
+      if (!isNaN(lng) && !isNaN(lat)) {
+        // ~1 degree ≈ 111 km; use ±1 degree for a roughly 200 km box
+        const delta = 1;
+        params.set('bbox', `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`);
+      }
     }
 
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(normalizedQuery)}.json?${params}`;
