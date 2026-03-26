@@ -39,15 +39,19 @@ export default function LocationAutocomplete({
     val.startsWith("Your Location (") || val === "Current Location";
 
   const { data: suggestions = [], isLoading } = useQuery({
-    queryKey: ['/api/locations', inputValue],
+    queryKey: ['/api/locations', inputValue, latestPosition?.lng, latestPosition?.lat],
     queryFn: async () => {
-      const response = await fetch(`${API_BASE}/api/locations?q=${encodeURIComponent(inputValue)}`);
+      const params = new URLSearchParams({ q: inputValue });
+      if (latestPosition) {
+        params.set('proximity', `${latestPosition.lng},${latestPosition.lat}`);
+      }
+      const response = await fetch(`${API_BASE}/api/locations?${params}`);
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
       return response.json();
     },
-    enabled: inputValue.length > 0 && !isCurrentLocationValue(inputValue),
+    enabled: inputValue.length > 2 && !isCurrentLocationValue(inputValue),
     staleTime: 10000,
   });
 
