@@ -27,23 +27,23 @@
 }
 
 /* Safe area insets for iOS notch / Dynamic Island / home indicator.
-   With viewport-fit=cover in the HTML meta tag and NO contentInset override
-   in capacitor.config.ts, env() returns correct device-specific values
-   on ALL iPhone models (15, 15+, 16, 16 Pro, 17 Pro, SE, etc.). */
+   --safe-area-inset-* CSS variables are injected by capacitor-plugin-safe-area
+   in main.tsx with real pixel values from the native OS.
+   Falls back to env() for web browsers. */
 .pt-safe {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
 }
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 .mb-safe {
-  margin-bottom: env(safe-area-inset-bottom, 0px);
+  margin-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 /* On mobile with bottom nav, add space so content isn't hidden */
 @media (max-width: 767px) {
   main {
-    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(3.5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   }
 }
 
