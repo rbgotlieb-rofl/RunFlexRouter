@@ -1105,6 +1105,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- Authenticated route saving ---
 
+  // Debug endpoint — check what's actually in the database for this user
+  app.get("/api/debug/saved", async (req, res) => {
+    try {
+      const isAuth = req.isAuthenticated();
+      const userId = isAuth ? req.user!.id : null;
+      const userRoutes = isAuth ? await storage.getRoutesByUserId(req.user!.id) : [];
+      const allRoutes = await storage.getRoutes();
+      res.json({
+        authenticated: isAuth,
+        userId,
+        userRoutesCount: userRoutes.length,
+        allRoutesCount: allRoutes.length,
+        allRouteUserIds: allRoutes.map((r: any) => ({ id: r.id, userId: r.userId, name: r.name?.substring(0, 30) })),
+      });
+    } catch (error: any) {
+      res.json({ error: error.message });
+    }
+  });
+
   app.post("/api/routes/save", async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
@@ -1114,10 +1133,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!route || !route.name || !route.startPoint || !route.endPoint || route.distance == null) {
         return res.status(400).json({ message: "Invalid route data" });
       }
+      console.log(`Saving route for userId=${req.user!.id}, routeName="${route.name?.substring(0, 40)}"`);
       const saved = await storage.saveRoute({
         ...route,
         userId: req.user!.id,
       });
+      console.log(`Saved route id=${saved.id}, userId=${saved.userId}`);
       res.status(201).json(saved);
     } catch (error) {
       console.error("Error saving route:", error);
