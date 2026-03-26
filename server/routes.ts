@@ -247,7 +247,7 @@ async function resolveStartPoint(req: any): Promise<{ lat: number; lng: number }
   return null;
 }
 
-function filterValidRoutes(routes: any[], targetKm: number, targetType?: string, targetDurationMin?: number): any[] {
+function filterValidRoutes(routes: any[], targetKm: number, targetType?: string, targetDurationMin?: number, surfaceType?: string, requiredFeatures?: string[]): any[] {
   const minDistanceKm = 0.2;
   const minRatioOfTarget = 0.3;
   const minTargetDistance = Math.max(minDistanceKm, targetKm * minRatioOfTarget);
@@ -278,6 +278,18 @@ function filterValidRoutes(routes: any[], targetKm: number, targetType?: string,
         console.log(`❌ Filtered out "${route.name}": estimated time ${route.estimatedTime}min exceeds target ${targetDurationMin}min (max ${maxDuration.toFixed(0)}min)`);
         return false;
       }
+    }
+
+    // Surface type filter
+    if (surfaceType && route.surfaceType && route.surfaceType !== surfaceType) {
+      return false;
+    }
+
+    // Required features filter — route must have ALL requested features
+    if (requiredFeatures && requiredFeatures.length > 0 && Array.isArray(route.features)) {
+      const routeFeatures = route.features.map((f: string) => f.toLowerCase());
+      const missing = requiredFeatures.some(rf => !routeFeatures.includes(rf.toLowerCase()));
+      if (missing) return false;
     }
 
     return true;
@@ -424,6 +436,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? parseInt(req.query.trafficLevel as string, 10)
         : undefined;
       const routeType = req.query.routeType as string | undefined;
+      const surfaceType = req.query.surfaceType as string | undefined;
+      const requiredFeatures = req.query.requiredFeatures
+        ? (req.query.requiredFeatures as string).split(",").filter(Boolean)
+        : undefined;
       const targetType = (req.query.targetType as string | undefined) || 'distance';
       const distanceUnit = (req.query.distanceUnit as string | undefined) || 'km';
       const rawTargetDuration = req.query.targetDuration
@@ -447,6 +463,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sceneryRating,
         trafficLevel,
         routeType,
+        surfaceType,
+        requiredFeatures,
         routeMode,
         targetDuration: effectiveTargetDuration,
         targetDistance: effectiveDistance,
@@ -542,6 +560,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               sceneryRating: 3,
               trafficLevel: 2,
               directions: directions,
+              surfaceType: 'road' as const,
               features: ['loop', 'scenic'],
               _isCleanLoop: isCleanLoop,
               _loopScore: score,
@@ -600,7 +619,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 elevationGain: Math.round(km * 8),
                 routePath, routeType: 'loop' as const,
                 sceneryRating: 3, trafficLevel: 2, directions,
-                features: ['loop', 'scenic'],
+                surfaceType: 'road' as const,
+              features: ['loop', 'scenic'],
                 _isCleanLoop: isClean,
                 _loopScore: score,
               };
@@ -627,7 +647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const result = pick(inBand.length >= 2 ? inBand : allLoops);
 
-          const validLoops = filterValidRoutes(result, baseKm, targetType, effectiveTargetDuration);
+          const validLoops = filterValidRoutes(result, baseKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
           validLoops.forEach((r, i) => { r.id = i + 1; });
 
           console.log(
@@ -892,7 +912,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         const allTargetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? (effectiveTargetDuration / 60) * 5 : 5);
-        const validAllResults = filterValidRoutes(allResults, allTargetKm, targetType, effectiveTargetDuration);
+        const validAllResults = filterValidRoutes(allResults, allTargetKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
         validAllResults.forEach((r, i) => { r.id = i + 1; });
         console.log(`✅ "all" mode total: ${validAllResults.length} routes returned (${allResults.length} before filtering)`);
         return res.json(validAllResults);
@@ -917,7 +937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       const targetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? (effectiveTargetDuration / 60) * 5 : 5);
-      const validRoutes = filterValidRoutes(routes, targetKm, targetType, effectiveTargetDuration);
+      const validRoutes = filterValidRoutes(routes, targetKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
       validRoutes.forEach((r, i) => { r.id = i + 1; });
 
       console.log(

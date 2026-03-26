@@ -31,6 +31,12 @@ export function useRoutes(
     if (filters?.routeType) {
       params.append("routeType", filters.routeType);
     }
+    if (filters?.surfaceType) {
+      params.append("surfaceType", filters.surfaceType);
+    }
+    if (filters?.requiredFeatures && filters.requiredFeatures.length > 0) {
+      params.append("requiredFeatures", filters.requiredFeatures.join(","));
+    }
     if (filters?.routeMode) {
       params.append("routeMode", filters.routeMode);
     }

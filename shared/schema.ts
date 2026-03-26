@@ -24,6 +24,7 @@ export const savedRoutes = pgTable("saved_routes", {
   estimatedTime: doublePrecision("estimated_time"),
   routePath: jsonb("route_path"),       // Point[]
   routeType: varchar("route_type", { length: 50 }),
+  surfaceType: varchar("surface_type", { length: 20 }),
   sceneryRating: integer("scenery_rating"),
   trafficLevel: integer("traffic_level"),
   features: jsonb("features"),          // string[]
@@ -89,6 +90,8 @@ export const routeFilterSchema = z
     sceneryRating: z.number().int().min(1).max(5).optional(),
     trafficLevel: z.number().int().min(1).max(5).optional(),
     routeType: z.string().optional(),
+    surfaceType: z.enum(['road', 'trail', 'mixed']).optional(),
+    requiredFeatures: z.array(z.string()).optional(),
     targetDuration: z.number().optional(),
     targetDistance: z.number().optional(),
     distanceUnit: z.enum(['km', 'miles']).optional(),
@@ -122,6 +125,7 @@ export type Route = {
   estimatedTime?: number;
   routePath?: any;
   routeType?: string;
+  surfaceType?: 'road' | 'trail' | 'mixed';
   sceneryRating?: number;
   trafficLevel?: number;
   features?: string[];

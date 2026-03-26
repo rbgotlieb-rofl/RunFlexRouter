@@ -1,7 +1,5 @@
-import { useState } from "react";
-import { X, Plus, SlidersHorizontal } from "lucide-react";
 import { RouteFilter } from "@shared/schema";
-import { Badge } from "@/components/ui/badge";
+import { SlidersHorizontal } from "lucide-react";
 
 interface RouteFiltersProps {
   totalRoutes: number;
@@ -9,88 +7,97 @@ interface RouteFiltersProps {
   onFilterChange: (filters: Partial<RouteFilter>) => void;
 }
 
+const ATTRIBUTE_CHIPS = [
+  { key: "scenic", label: "Scenic", filterKey: "sceneryRating", filterValue: 4 },
+  { key: "low_traffic", label: "Low Traffic", filterKey: "trafficLevel", filterValue: 1 },
+  { key: "waterfront", label: "Waterfront", feature: true },
+  { key: "well_lit", label: "Well-lit", feature: true },
+  { key: "cultural_sites", label: "Cultural Sites", feature: true },
+  { key: "urban", label: "Urban", feature: true },
+] as const;
+
+const SURFACE_CHIPS = [
+  { key: "road", label: "Road" },
+  { key: "trail", label: "Trail" },
+  { key: "mixed", label: "Mixed" },
+] as const;
+
 export default function RouteFilters({ totalRoutes, filters, onFilterChange }: RouteFiltersProps) {
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  // Route type filter removed as per requirement
+  const activeFeatures: string[] = (filters as any).requiredFeatures || [];
+  const activeSurface = (filters as any).surfaceType as string | undefined;
 
-  const addFilter = (filter: string) => {
-    if (!activeFilters.includes(filter)) {
-      const newFilters = [...activeFilters, filter];
-      setActiveFilters(newFilters);
-      
-      // Update the actual filters
-      if (filter === "scenic") {
-        onFilterChange({ sceneryRating: 3 });
-      } else if (filter === "low-traffic") {
-        onFilterChange({ trafficLevel: 1 });
-      }
+  const toggleFeatureChip = (chip: typeof ATTRIBUTE_CHIPS[number]) => {
+    if (chip.feature) {
+      const updated = activeFeatures.includes(chip.key)
+        ? activeFeatures.filter(f => f !== chip.key)
+        : [...activeFeatures, chip.key];
+      onFilterChange({ requiredFeatures: updated.length > 0 ? updated : undefined } as any);
+    } else {
+      // Toggle sceneryRating / trafficLevel
+      const currentVal = (filters as any)[chip.filterKey];
+      onFilterChange({
+        [chip.filterKey]: currentVal === chip.filterValue ? undefined : chip.filterValue,
+      });
     }
   };
 
-  const removeFilter = (filter: string) => {
-    const newFilters = activeFilters.filter(f => f !== filter);
-    setActiveFilters(newFilters);
-    
-    // Update the actual filters
-    if (filter === "scenic") {
-      onFilterChange({ sceneryRating: undefined });
-    } else if (filter === "low-traffic") {
-      onFilterChange({ trafficLevel: undefined });
-    }
+  const toggleSurface = (surface: string) => {
+    onFilterChange({
+      surfaceType: activeSurface === surface ? undefined : surface,
+    } as any);
   };
-  
-  // Route type filter change handler removed as per requirement
+
+  const isChipActive = (chip: typeof ATTRIBUTE_CHIPS[number]) => {
+    if (chip.feature) return activeFeatures.includes(chip.key);
+    return (filters as any)[chip.filterKey] === chip.filterValue;
+  };
 
   return (
     <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
       <div className="p-4">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">Routes ({totalRoutes})</h2>
-          <button 
-            className="text-sm text-primary flex items-center"
-            onClick={() => {}} // This would open a modal with all filter options
-          >
-            <SlidersHorizontal size={16} className="mr-1" /> Filters
-          </button>
         </div>
-        
-        {/* Scenery filter removed as per requirement */}
-        
-        {/* Distance filter removed as per requirement */}
 
-        {/* Active filters */}
-        <div className="flex space-x-2 overflow-x-auto hide-scrollbar py-1 no-scrollbar">
-          {activeFilters.includes("scenic") && (
-            <Badge variant="secondary" className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-800 rounded-full">
-              <span>Scenic</span>
-              <button onClick={() => removeFilter("scenic")} className="text-gray-500">
-                <X size={12} />
+        {/* Attribute filter chips */}
+        <div className="flex flex-wrap gap-2 mb-2">
+          {ATTRIBUTE_CHIPS.map((chip) => {
+            const active = isChipActive(chip);
+            return (
+              <button
+                key={chip.key}
+                onClick={() => toggleFeatureChip(chip)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  active
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {chip.label}
               </button>
-            </Badge>
-          )}
-          
-          {activeFilters.includes("low-traffic") && (
-            <Badge variant="secondary" className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-800 rounded-full">
-              <span>Low Traffic</span>
-              <button onClick={() => removeFilter("low-traffic")} className="text-gray-500">
-                <X size={12} />
+            );
+          })}
+        </div>
+
+        {/* Surface type chips */}
+        <div className="flex gap-2">
+          <span className="text-xs text-gray-500 self-center mr-1">Surface:</span>
+          {SURFACE_CHIPS.map((chip) => {
+            const active = activeSurface === chip.key;
+            return (
+              <button
+                key={chip.key}
+                onClick={() => toggleSurface(chip.key)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  active
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {chip.label}
               </button>
-            </Badge>
-          )}
-          
-          <button 
-            onClick={() => {
-              if (!activeFilters.includes("scenic")) {
-                addFilter("scenic");
-              } else if (!activeFilters.includes("low-traffic")) {
-                addFilter("low-traffic");
-              }
-            }}
-            className="flex items-center px-3 py-1 bg-green-50 text-primary rounded-full text-xs"
-          >
-            <Plus size={12} className="mr-1" />
-            <span>Add Filter</span>
-          </button>
+            );
+          })}
         </div>
       </div>
     </div>
