@@ -7,6 +7,7 @@ import { getFeatureIcon, getRouteTypeLabel, getRouteTypeColor } from "@/lib/rout
 import RouteDirections from "./RouteDirections";
 import RouteMapPreview from "../map/RouteMapPreview";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/api";
 import { FaSpotify } from "react-icons/fa";
 import { SiApplemusic } from "react-icons/si";
@@ -25,6 +26,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     setIsMounted(true);
@@ -44,7 +46,8 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
         throw new Error(data.message || "Failed to save route");
       }
       setIsSaved(true);
-      toast({ title: "Route saved!", description: "You can find it in your saved routes." });
+      queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+      toast({ title: "Route saved!", description: "You can find it in your Saved tab." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -554,8 +557,9 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
             
             {/* Secondary actions */}
             <div className="flex gap-3 mb-4">
-              <Button variant="outline" className="flex-1">
-                <Heart className="h-4 w-4 mr-2" /> Save
+              <Button variant="outline" className="flex-1" onClick={handleSaveRoute} disabled={isSaving || isSaved}>
+                {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Heart className={`h-4 w-4 mr-2 ${isSaved ? "fill-red-500 text-red-500" : ""}`} />}
+                {isSaved ? "Saved" : "Save"}
               </Button>
               <Button variant="outline" className="flex-1">
                 <Share2 className="h-4 w-4 mr-2" /> Share

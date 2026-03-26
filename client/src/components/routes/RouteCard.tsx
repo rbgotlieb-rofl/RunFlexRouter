@@ -1,6 +1,11 @@
+import { useState } from "react";
 import { Route, Point } from "@shared/schema";
 import { getFeatureIcon, getRouteTypeLabel, getRouteTypeColor } from "@/lib/route-utils";
 import RouteMapPreview from "@/components/map/RouteMapPreview";
+import { Heart, Loader2 } from "lucide-react";
+import { API_BASE } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface RouteCardProps {
   route: Route;
@@ -12,9 +17,38 @@ interface RouteCardProps {
 export default function RouteCard({ route, routeNumber, onClick, userLocation }: RouteCardProps) {
   const routeTypeColor = getRouteTypeColor(route.routeType || 'any');
   const routeTypeLabel = getRouteTypeLabel(route.routeType || 'any');
-  
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger card onClick
+    if (isSaving || isSaved) return;
+    setIsSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/routes/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(route),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to save route");
+      }
+      setIsSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+      toast({ title: "Route saved!", description: "You can find it in your Saved tab." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
-    <div 
+    <div
       onClick={onClick}
       className="route-card bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer transform hover:-translate-y-1 duration-200"
     >
@@ -33,8 +67,19 @@ export default function RouteCard({ route, routeNumber, onClick, userLocation }:
             <span className={`inline-block px-2 py-1 ${routeTypeColor} text-xs rounded-full`}>
               {routeTypeLabel}
             </span>
-            <button className="text-neutral-700 hover:text-primary">
-              <i className="far fa-heart"></i>
+            <button
+              onClick={handleSave}
+              disabled={isSaving || isSaved}
+              className={`p-1 transition-colors ${
+                isSaved ? 'text-red-500' : 'text-neutral-400 hover:text-red-500'
+              }`}
+              title={isSaved ? "Saved" : "Save route"}
+            >
+              {isSaving ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Heart className={`h-5 w-5 ${isSaved ? 'fill-red-500' : ''}`} />
+              )}
             </button>
           </div>
         </div>
@@ -55,7 +100,7 @@ export default function RouteCard({ route, routeNumber, onClick, userLocation }:
           <div>
             <p className="text-gray-500">Est. Time</p>
             <p className="font-medium">
-              {route.estimatedTime && route.estimatedTime >= 60 
+              {route.estimatedTime && route.estimatedTime >= 60
                 ? `${Math.floor(route.estimatedTime / 60)}h ${route.estimatedTime % 60}m`
                 : `${route.estimatedTime || 0}m`}
             </p>
