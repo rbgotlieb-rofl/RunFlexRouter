@@ -221,7 +221,7 @@ export default function LocationAutocomplete({
           onChange={handleInputChange}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          className={`w-full py-2 pl-3 border rounded-lg focus:border-primary focus:outline-none ${
+          className={`w-full py-2 pl-3 text-base border rounded-lg focus:border-primary focus:outline-none ${
             showLocationOption ? 'pr-10' : 'pr-4'
           } ${showCurrentLocationLabel ? 'placeholder:text-blue-600 placeholder:font-medium' : ''}`}
         />
