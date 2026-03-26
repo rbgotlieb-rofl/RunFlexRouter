@@ -16,6 +16,7 @@
   "dependencies": {
     "@capacitor/core": "^8.2.0",
     "@capacitor/geolocation": "^8.1.0",
+    "@capacitor/status-bar": "^8.0.2",
     "@hookform/resolvers": "^3.9.1",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@mapbox/mapbox-gl-geocoder": "^5.0.3",
