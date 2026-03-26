@@ -50,6 +50,12 @@
 /* Prevent iOS WebView bounce/rubber-banding */
 html, body {
   overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Prevent iOS auto-zoom on input focus (triggers when font < 16px) */
+input, select, textarea {
+  font-size: 16px !important;
 }
 
 #root {
