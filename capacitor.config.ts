@@ -12,8 +12,8 @@ const config: CapacitorConfig = {
       splashImmersive: false,
     },
     StatusBar: {
-      style: 'LIGHT',
-      backgroundColor: '#ffffff',
+      style: 'DARK',
+      overlaysWebView: true,
     },
     Geolocation: {
       // iOS requires these keys in Info.plist (set via Xcode or manually)

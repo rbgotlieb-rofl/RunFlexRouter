@@ -27,21 +27,24 @@
 }
 
 /* Safe area insets for iOS notch / home indicator.
-   With contentInset:'automatic' + viewport-fit=cover, env() values
-   are correctly reported by iOS for all iPhone models. */
+   Uses both constant() (iOS 11.0-11.2) and env() (iOS 11.2+). */
 .pt-safe {
-  padding-top: env(safe-area-inset-top);
+  padding-top: constant(safe-area-inset-top) !important;
+  padding-top: env(safe-area-inset-top) !important;
 }
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: constant(safe-area-inset-bottom) !important;
+  padding-bottom: env(safe-area-inset-bottom) !important;
 }
 .mb-safe {
-  margin-bottom: env(safe-area-inset-bottom);
+  margin-bottom: constant(safe-area-inset-bottom) !important;
+  margin-bottom: env(safe-area-inset-bottom) !important;
 }
 
 /* On mobile with bottom nav, add space so content isn't hidden */
 @media (max-width: 767px) {
   main {
+    padding-bottom: calc(3.5rem + constant(safe-area-inset-bottom, 0px));
     padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
