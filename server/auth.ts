@@ -1,12 +1,12 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
-import pgSimple from "connect-pg-simple";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
+import { NeonSessionStore } from "./session-store";
 import type { User } from "@shared/schema";
 
 const scryptAsync = promisify(scrypt);
@@ -42,13 +42,8 @@ export function setupAuth(app: Express): void {
   const dbUrl = process.env.DATABASE_URL;
 
   if (dbUrl) {
-    const PgStore = pgSimple(session);
-    store = new PgStore({
-      conString: dbUrl,
-      tableName: "session",
-      createTableIfMissing: true,
-    });
-    console.log("Using PostgreSQL session store (sessions persist across deploys)");
+    store = new NeonSessionStore(dbUrl);
+    console.log("Using Neon PostgreSQL session store (sessions persist across deploys)");
   } else {
     const MemoryStore = createMemoryStore(session);
     store = new MemoryStore({ checkPeriod: 86400000 });
