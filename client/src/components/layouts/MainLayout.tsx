@@ -32,7 +32,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
       {/* Mobile bottom navigation \u2014 safe area aware */}
       {isMobile && (
-        <nav className="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 z-20 pb-safe px-safe">
+        <nav className="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 z-20 pb-safe">
           <div className="flex justify-around items-center h-14">
             {navItems.map((item) => {
               const isActive = location === item.href;

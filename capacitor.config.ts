@@ -24,7 +24,7 @@ const config: CapacitorConfig = {
     allowNavigation: ['runflexrouter-production.up.railway.app'],
   },
   ios: {
-    contentInset: 'never',
+    contentInset: 'automatic',
     allowsLinkPreview: false,
     backgroundColor: '#ffffff',
     preferredContentMode: 'mobile',
