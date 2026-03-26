@@ -950,11 +950,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- Authenticated route saving ---
-  // IMPORTANT: These must be registered BEFORE /api/routes/:id
-  // otherwise Express matches "saved" as an :id parameter
+  // --- Saved routes (using /api/saved/* to avoid conflict with /api/routes/:id) ---
 
-  // Debug endpoint — check what's actually in the database for this user
+  // Debug endpoint
   app.get("/api/debug/saved", async (req, res) => {
     try {
       const isAuth = req.isAuthenticated();
@@ -973,7 +971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/routes/save", async (req, res) => {
+  app.post("/api/saved", async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Authentication required" });
@@ -995,7 +993,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/routes/saved", async (req, res) => {
+  app.get("/api/saved", async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Authentication required" });
@@ -1008,7 +1006,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/routes/saved/:id", async (req, res) => {
+  app.delete("/api/saved/:id", async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Authentication required" });

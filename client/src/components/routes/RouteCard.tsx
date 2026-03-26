@@ -19,27 +19,44 @@ export default function RouteCard({ route, routeNumber, onClick, userLocation }:
   const routeTypeLabel = getRouteTypeLabel(route.routeType || 'any');
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [savedId, setSavedId] = useState<number | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const handleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Don't trigger card onClick
-    if (isSaving || isSaved) return;
+  const handleToggleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isSaving) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/api/routes/save`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(route),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || "Failed to save route");
+      if (isSaved && savedId) {
+        // Unsave
+        const res = await fetch(`${API_BASE}/api/saved/${savedId}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error("Failed to remove route");
+        setIsSaved(false);
+        setSavedId(null);
+        queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+        toast({ title: "Route removed", description: "Removed from your Saved tab." });
+      } else {
+        // Save
+        const res = await fetch(`${API_BASE}/api/saved`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(route),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || "Failed to save route");
+        }
+        const saved = await res.json();
+        setIsSaved(true);
+        setSavedId(saved.id);
+        queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+        toast({ title: "Route saved!", description: "You can find it in your Saved tab." });
       }
-      setIsSaved(true);
-      queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
-      toast({ title: "Route saved!", description: "You can find it in your Saved tab." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -68,12 +85,12 @@ export default function RouteCard({ route, routeNumber, onClick, userLocation }:
               {routeTypeLabel}
             </span>
             <button
-              onClick={handleSave}
-              disabled={isSaving || isSaved}
+              onClick={handleToggleSave}
+              disabled={isSaving}
               className={`p-1 transition-colors ${
                 isSaved ? 'text-red-500' : 'text-neutral-400 hover:text-red-500'
               }`}
-              title={isSaved ? "Saved" : "Save route"}
+              title={isSaved ? "Remove from saved" : "Save route"}
             >
               {isSaving ? (
                 <Loader2 className="h-5 w-5 animate-spin" />

@@ -15,7 +15,7 @@ export default function SavedRoutesPage() {
   const { data: savedRoutes = [], isLoading, refetch } = useQuery<Route[]>({
     queryKey: ["saved-routes"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/routes/saved`, {
+      const res = await fetch(`${API_BASE}/api/saved`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch saved routes");
@@ -28,7 +28,7 @@ export default function SavedRoutesPage() {
   const handleDeleteRoute = async (routeId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`${API_BASE}/api/routes/saved/${routeId}`, {
+      const res = await fetch(`${API_BASE}/api/saved/${routeId}`, {
         method: "DELETE",
         credentials: "include",
       });

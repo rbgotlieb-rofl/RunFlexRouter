@@ -35,7 +35,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
   const handleSaveRoute = async () => {
     setIsSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/api/routes/save`, {
+      const res = await fetch(`${API_BASE}/api/saved`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

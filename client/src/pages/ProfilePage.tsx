@@ -12,7 +12,7 @@ export default function ProfilePage() {
   const { data: savedRoutes = [], isLoading } = useQuery<Route[]>({
     queryKey: ["saved-routes"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/routes/saved`, {
+      const res = await fetch(`${API_BASE}/api/saved`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch saved routes");
