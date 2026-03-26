@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import MainLayout from "@/components/layouts/MainLayout";
 import RouteSearch from "@/components/routes/RouteSearch";
 import RouteCard from "@/components/routes/RouteCard";
+import RouteFilters from "@/components/routes/RouteFilters";
 import RoutePreferences from "@/components/routes/RoutePreferences";
 import RouteDetailSheet from "@/components/routes/RouteDetailSheet";
 import MapView from "@/components/map/MapView";
@@ -224,6 +225,19 @@ export default function HomePage() {
               ${viewMode === "list" ? "block" : "hidden md:block"}
             `}
           >
+            {/* Filter chips */}
+            {routes && routes.length > 0 && (
+              <RouteFilters
+                totalRoutes={routes.length}
+                filters={filters}
+                onFilterChange={(newFilters) => {
+                  handleFilterChange(newFilters);
+                  // Re-trigger search with updated filters
+                  setSearchTrigger(prev => prev + 1);
+                }}
+              />
+            )}
+
             {/* Routes */}
             <div className="p-4 space-y-4">
               {isLoading ? (
