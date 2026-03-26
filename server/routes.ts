@@ -912,7 +912,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         const allTargetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? (effectiveTargetDuration / 60) * 5 : 5);
-        const validAllResults = filterValidRoutes(allResults, allTargetKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
+        // In "all" mode, skip duration/distance filtering — show the full variety of route types
+        const validAllResults = filterValidRoutes(allResults, 0.2, undefined, undefined, surfaceType, requiredFeatures);
         validAllResults.forEach((r, i) => { r.id = i + 1; });
         console.log(`✅ "all" mode total: ${validAllResults.length} routes returned (${allResults.length} before filtering)`);
         return res.json(validAllResults);
