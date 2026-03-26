@@ -21,7 +21,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen">
+    <div className="flex flex-col md:flex-row h-screen" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 59px)' }}>
       {/* Sidebar for desktop */}
       {!isMobile && <Sidebar />}
 
