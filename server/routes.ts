@@ -950,6 +950,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // --- Authenticated route saving ---
+  // IMPORTANT: These must be registered BEFORE /api/routes/:id
+  // otherwise Express matches "saved" as an :id parameter
+
+  // Debug endpoint — check what's actually in the database for this user
+  app.get("/api/debug/saved", async (req, res) => {
+    try {
+      const isAuth = req.isAuthenticated();
+      const userId = isAuth ? req.user!.id : null;
+      const userRoutes = isAuth ? await storage.getRoutesByUserId(req.user!.id) : [];
+      const allRoutes = await storage.getRoutes();
+      res.json({
+        authenticated: isAuth,
+        userId,
+        userRoutesCount: userRoutes.length,
+        allRoutesCount: allRoutes.length,
+        allRouteUserIds: allRoutes.map((r: any) => ({ id: r.id, userId: r.userId, name: r.name?.substring(0, 30) })),
+      });
+    } catch (error: any) {
+      res.json({ error: error.message });
+    }
+  });
+
+  app.post("/api/routes/save", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const route = req.body;
+      if (!route || !route.name || !route.startPoint || !route.endPoint || route.distance == null) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+      console.log(`Saving route for userId=${req.user!.id}, routeName="${route.name?.substring(0, 40)}"`);
+      const saved = await storage.saveRoute({
+        ...route,
+        userId: req.user!.id,
+      });
+      console.log(`Saved route id=${saved.id}, userId=${saved.userId}`);
+      res.status(201).json(saved);
+    } catch (error) {
+      console.error("Error saving route:", error);
+      res.status(500).json({ message: "Error saving route" });
+    }
+  });
+
+  app.get("/api/routes/saved", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const userRoutes = await storage.getRoutesByUserId(req.user!.id);
+      res.json(userRoutes);
+    } catch (error) {
+      console.error("Error fetching saved routes:", error);
+      res.status(500).json({ message: "Error fetching saved routes" });
+    }
+  });
+
+  app.delete("/api/routes/saved/:id", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const routeId = parseInt(req.params.id, 10);
+      if (isNaN(routeId)) {
+        return res.status(400).json({ message: "Invalid route ID" });
+      }
+      await storage.deleteRoute(routeId, req.user!.id);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error deleting saved route:", error);
+      res.status(500).json({ message: "Error deleting saved route" });
+    }
+  });
+
   // GET /api/routes/:id
   app.get("/api/routes/:id", async (req, res) => {
     try {
@@ -1100,79 +1175,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Reverse geocode error:", error);
       res.json({ name: null });
-    }
-  });
-
-  // --- Authenticated route saving ---
-
-  // Debug endpoint — check what's actually in the database for this user
-  app.get("/api/debug/saved", async (req, res) => {
-    try {
-      const isAuth = req.isAuthenticated();
-      const userId = isAuth ? req.user!.id : null;
-      const userRoutes = isAuth ? await storage.getRoutesByUserId(req.user!.id) : [];
-      const allRoutes = await storage.getRoutes();
-      res.json({
-        authenticated: isAuth,
-        userId,
-        userRoutesCount: userRoutes.length,
-        allRoutesCount: allRoutes.length,
-        allRouteUserIds: allRoutes.map((r: any) => ({ id: r.id, userId: r.userId, name: r.name?.substring(0, 30) })),
-      });
-    } catch (error: any) {
-      res.json({ error: error.message });
-    }
-  });
-
-  app.post("/api/routes/save", async (req, res) => {
-    try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-      const route = req.body;
-      if (!route || !route.name || !route.startPoint || !route.endPoint || route.distance == null) {
-        return res.status(400).json({ message: "Invalid route data" });
-      }
-      console.log(`Saving route for userId=${req.user!.id}, routeName="${route.name?.substring(0, 40)}"`);
-      const saved = await storage.saveRoute({
-        ...route,
-        userId: req.user!.id,
-      });
-      console.log(`Saved route id=${saved.id}, userId=${saved.userId}`);
-      res.status(201).json(saved);
-    } catch (error) {
-      console.error("Error saving route:", error);
-      res.status(500).json({ message: "Error saving route" });
-    }
-  });
-
-  app.get("/api/routes/saved", async (req, res) => {
-    try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-      const userRoutes = await storage.getRoutesByUserId(req.user!.id);
-      res.json(userRoutes);
-    } catch (error) {
-      console.error("Error fetching saved routes:", error);
-      res.status(500).json({ message: "Error fetching saved routes" });
-    }
-  });
-
-  app.delete("/api/routes/saved/:id", async (req, res) => {
-    try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-      const routeId = parseInt(req.params.id, 10);
-      if (isNaN(routeId)) {
-        return res.status(400).json({ message: "Invalid route ID" });
-      }
-      await storage.deleteRoute(routeId, req.user!.id);
-      res.json({ ok: true });
-    } catch (error) {
-      console.error("Error deleting saved route:", error);
-      res.status(500).json({ message: "Error deleting saved route" });
     }
   });
 
