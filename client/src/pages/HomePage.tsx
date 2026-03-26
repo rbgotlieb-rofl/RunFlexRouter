@@ -236,7 +236,7 @@ export default function HomePage() {
             {/* Filter chips — client-side filtering on already-loaded routes */}
             {routes && routes.length > 0 && (
               <RouteFilters
-                totalRoutes={routes.length}
+                routes={routes}
                 filteredCount={filteredRoutes?.length ?? 0}
                 activeFilters={clientFilters}
                 onFiltersChange={setClientFilters}

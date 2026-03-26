@@ -1,33 +1,38 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { Route } from "@shared/schema";
 import { X } from "lucide-react";
 
-interface ActiveFilters {
+export interface ActiveFilters {
   features: string[];
   surfaceType?: string;
 }
 
 interface RouteFiltersProps {
-  totalRoutes: number;
+  routes: Route[];
   filteredCount: number;
   activeFilters: ActiveFilters;
   onFiltersChange: (filters: ActiveFilters) => void;
 }
 
-const FEATURE_CHIPS = [
-  { key: "scenic", label: "Scenic" },
-  { key: "low_traffic", label: "Low Traffic" },
-  { key: "waterfront", label: "Waterfront" },
-  { key: "well_lit", label: "Well-lit" },
-  { key: "cultural_sites", label: "Cultural Sites" },
-  { key: "urban", label: "Urban" },
-];
+const FEATURE_LABELS: Record<string, string> = {
+  scenic: "Scenic",
+  low_traffic: "Low Traffic",
+  waterfront: "Waterfront",
+  well_lit: "Well-lit",
+  cultural_sites: "Cultural Sites",
+  urban: "Urban",
+  loop: "Loop",
+  out_and_back: "Out & Back",
+  park: "Park",
+  high_traffic: "High Traffic",
+  medium_traffic: "Medium Traffic",
+};
 
-const SURFACE_CHIPS = [
-  { key: "road", label: "Road" },
-  { key: "trail", label: "Trail" },
-  { key: "mixed", label: "Mixed" },
-];
+const SURFACE_LABELS: Record<string, string> = {
+  road: "Road",
+  trail: "Trail",
+  mixed: "Mixed",
+};
 
 export function applyClientFilters(routes: Route[], filters: ActiveFilters): Route[] {
   return routes.filter((route) => {
@@ -49,8 +54,38 @@ export function applyClientFilters(routes: Route[], filters: ActiveFilters): Rou
 
 export const EMPTY_FILTERS: ActiveFilters = { features: [], surfaceType: undefined };
 
-export default function RouteFilters({ totalRoutes, filteredCount, activeFilters, onFiltersChange }: RouteFiltersProps) {
+export default function RouteFilters({ routes, filteredCount, activeFilters, onFiltersChange }: RouteFiltersProps) {
   const hasActiveFilters = activeFilters.features.length > 0 || !!activeFilters.surfaceType;
+
+  // Build the set of features that actually exist across all loaded routes
+  const availableFeatures = useMemo(() => {
+    const featureSet = new Set<string>();
+    for (const route of routes) {
+      if (route.features && Array.isArray(route.features)) {
+        for (const f of route.features) {
+          featureSet.add(f.toLowerCase());
+        }
+      }
+    }
+    // Return only features that have a label defined, sorted by label order
+    return Array.from(featureSet)
+      .filter(f => FEATURE_LABELS[f])
+      .sort((a, b) => {
+        const keys = Object.keys(FEATURE_LABELS);
+        return keys.indexOf(a) - keys.indexOf(b);
+      });
+  }, [routes]);
+
+  // Build the set of surface types that actually exist
+  const availableSurfaces = useMemo(() => {
+    const surfaceSet = new Set<string>();
+    for (const route of routes) {
+      if (route.surfaceType) {
+        surfaceSet.add(route.surfaceType);
+      }
+    }
+    return Array.from(surfaceSet).filter(s => SURFACE_LABELS[s]);
+  }, [routes]);
 
   const toggleFeature = (key: string) => {
     const updated = activeFilters.features.includes(key)
@@ -70,12 +105,23 @@ export default function RouteFilters({ totalRoutes, filteredCount, activeFilters
     onFiltersChange(EMPTY_FILTERS);
   };
 
+  // Don't show the filter section if there's nothing to filter by
+  if (availableFeatures.length === 0 && availableSurfaces.length === 0) {
+    return (
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
+        <div className="p-4">
+          <h2 className="text-lg font-semibold">Routes ({routes.length})</h2>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
       <div className="p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">
-            Routes ({hasActiveFilters ? `${filteredCount} of ${totalRoutes}` : totalRoutes})
+            Routes ({hasActiveFilters ? `${filteredCount} of ${routes.length}` : routes.length})
           </h2>
           {hasActiveFilters && (
             <button
@@ -88,46 +134,50 @@ export default function RouteFilters({ totalRoutes, filteredCount, activeFilters
           )}
         </div>
 
-        {/* Feature filter chips */}
-        <div className="flex flex-wrap gap-2 mb-2">
-          {FEATURE_CHIPS.map((chip) => {
-            const active = activeFilters.features.includes(chip.key);
-            return (
-              <button
-                key={chip.key}
-                onClick={() => toggleFeature(chip.key)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  active
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {chip.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Feature filter chips — only show features that exist in loaded routes */}
+        {availableFeatures.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {availableFeatures.map((key) => {
+              const active = activeFilters.features.includes(key);
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggleFeature(key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    active
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {FEATURE_LABELS[key] || key}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        {/* Surface type chips */}
-        <div className="flex gap-2">
-          <span className="text-xs text-gray-500 self-center mr-1">Surface:</span>
-          {SURFACE_CHIPS.map((chip) => {
-            const active = activeFilters.surfaceType === chip.key;
-            return (
-              <button
-                key={chip.key}
-                onClick={() => toggleSurface(chip.key)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  active
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {chip.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Surface type chips — only show if routes have surface data */}
+        {availableSurfaces.length > 0 && (
+          <div className="flex gap-2">
+            <span className="text-xs text-gray-500 self-center mr-1">Surface:</span>
+            {availableSurfaces.map((key) => {
+              const active = activeFilters.surfaceType === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggleSurface(key)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    active
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {SURFACE_LABELS[key] || key}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
