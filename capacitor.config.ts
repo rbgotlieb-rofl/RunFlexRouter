@@ -11,12 +11,6 @@ const config: CapacitorConfig = {
       splashFullScreen: false,
       splashImmersive: false,
     },
-    CapacitorHttp: {
-      // Route all fetch() calls through native HTTP engine.
-      // This bypasses WKWebView's third-party cookie blocking (ITP),
-      // so session cookies work for cross-origin requests to Railway.
-      enabled: true,
-    },
     Geolocation: {
       // iOS requires these keys in Info.plist (set via Xcode or manually)
     },
