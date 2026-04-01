@@ -839,9 +839,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             try {
               const params = new URLSearchParams({
                 access_token: token,
-                types: 'poi',
+                types: 'poi,neighborhood,locality',
                 proximity: `${lng},${lat}`,
-                limit: '3',
+                country: 'gb',
+                limit: '5',
               });
               const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`;
               const resp = await fetch(url);
@@ -853,7 +854,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const dLat = (pLat - lat) * 111;
                 const dLng = (pLng - lng) * 111 * Math.cos(lat * Math.PI / 180);
                 const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-                if (distKm >= 0.5 && distKm <= 32) { // ~20 miles
+                if (distKm >= 0.2 && distKm <= 32) { // 200m to ~20 miles
                   const name = feat.text || feat.place_name?.split(',')[0] || query;
                   results.push({ name, point: { lat: pLat, lng: pLng }, distKm, category });
                 }
@@ -1129,9 +1130,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               try {
                 const params = new URLSearchParams({
                   access_token: mapboxToken,
-                  types: 'poi',
+                  types: 'poi,neighborhood,locality',
                   proximity: `${startPoint.lng},${startPoint.lat}`,
-                  limit: '3',
+                  country: 'gb',
+                  limit: '5',
                 });
                 const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`;
                 const resp = await fetch(url);
@@ -1143,8 +1145,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   const dLat = (pLat - startPoint.lat) * 111;
                   const dLng = (pLng - startPoint.lng) * 111 * Math.cos(startPoint.lat * Math.PI / 180);
                   const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-                  if (distKm >= 0.5 && distKm <= 32) {
+                  if (distKm >= 0.2 && distKm <= 32) {
                     const name = feat.text || feat.place_name?.split(',')[0] || query;
+                    console.log(`  🌲 Found green space: "${name}" (${distKm.toFixed(1)}km, query="${query}")`);
                     greenPOI = { name, point: { lat: pLat, lng: pLng }, distKm };
                     break;
                   }
