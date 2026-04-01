@@ -41,13 +41,13 @@
 
 @media (max-width: 767px) {
   .safe-top {
-    padding-top: 59px;
+    padding-top: 59px !important;
   }
   .safe-bottom {
-    padding-bottom: 34px;
+    padding-bottom: 34px !important;
   }
   main {
-    padding-bottom: calc(3.5rem + 34px);
+    padding-bottom: calc(3.5rem + 34px) !important;
   }
 }
 

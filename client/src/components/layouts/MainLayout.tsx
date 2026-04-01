@@ -21,15 +21,15 @@ export default function MainLayout({ children }: MainLayoutProps) {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen safe-top">
+    <div className="flex flex-col md:flex-row h-screen pt-[59px] md:pt-0">
       {!isMobile && <Sidebar />}
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden safe-bottom">
+      <main className="flex-1 flex flex-col h-full overflow-hidden pb-[34px] md:pb-0">
         {children}
       </main>
 
       {isMobile && (
-        <nav className="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 z-20 safe-bottom">
+        <nav className="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 z-20 pb-[34px] md:pb-0">
           <div className="flex justify-around items-center h-14">
             {navItems.map((item) => {
               const isActive = location === item.href;

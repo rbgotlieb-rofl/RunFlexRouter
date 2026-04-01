@@ -48,7 +48,7 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-green-50 px-4 safe-top">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-green-50 px-4 pt-[59px] md:pt-0">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
