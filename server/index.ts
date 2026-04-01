@@ -11,16 +11,21 @@ app.use((req, res, next) => {
   const allowed = [
     'capacitor://localhost',  // iOS Capacitor
     'http://localhost',       // Android Capacitor
+    'http://localhost:3000',  // Local dev
     'http://localhost:5173',  // Vite dev
-    'https://runflexrouter-production.up.railway.app', // Production
+    'https://runflexrouter-production.up.railway.app', // Production web
   ];
   if (origin && allowed.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '86400');
+    return res.sendStatus(204);
   }
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 

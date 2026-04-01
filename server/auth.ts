@@ -50,15 +50,24 @@ export function setupAuth(app: Express): void {
     console.log("Using MemoryStore for sessions (dev mode — sessions lost on restart)");
   }
 
+  // Detect if app is running behind HTTPS (Railway) or locally
+  const isProduction = !!process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+
   const sessionMiddleware = session({
     secret: process.env.SESSION_SECRET || "runflex-dev-secret",
     resave: false,
     saveUninitialized: false,
     store,
+    proxy: isProduction, // Trust Railway's reverse proxy for secure cookies
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      secure: false, // Allow http for Capacitor
-      sameSite: "lax",
+      // Cross-origin cookies (Capacitor app → Railway backend) require:
+      // - secure: true (HTTPS only)
+      // - sameSite: 'none' (allow cross-origin)
+      // In dev, use lax/insecure for localhost
+      secure: isProduction,
+      sameSite: isProduction ? "none" as const : "lax" as const,
+      httpOnly: true,
     },
   });
 
