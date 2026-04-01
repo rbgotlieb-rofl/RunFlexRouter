@@ -8,6 +8,8 @@ export function getDb() {
   if (db) return db;
 
   const url = process.env.DATABASE_URL;
+  console.log(`DB: DATABASE_URL ${url ? `set (${url.substring(0, 30)}...)` : 'NOT SET'}`);
+  console.log(`DB: All env vars with DATABASE: ${Object.keys(process.env).filter(k => k.includes('DATABASE')).join(', ') || 'none'}`);
   if (!url) {
     return null;
   }
