@@ -8,8 +8,10 @@ export function getDb() {
   if (db) return db;
 
   const url = process.env.DATABASE_URL;
-  console.log(`DB: DATABASE_URL ${url ? `set (${url.substring(0, 30)}...)` : 'NOT SET'}`);
-  console.log(`DB: All env vars with DATABASE: ${Object.keys(process.env).filter(k => k.includes('DATABASE')).join(', ') || 'none'}`);
+  // Debug: list all env var names to diagnose Railway injection issue
+  const allEnvKeys = Object.keys(process.env).sort().join(', ');
+  console.log(`DB: Available env vars: ${allEnvKeys}`);
+  console.log(`DB: DATABASE_URL ${url ? `set (length=${url.length})` : 'NOT SET'}`);
   if (!url) {
     return null;
   }
