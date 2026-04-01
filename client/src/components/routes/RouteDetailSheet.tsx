@@ -371,16 +371,12 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
         </Sheet>
       </div>
     
-      {/* Mobile version uses a custom full-screen sheet */}
-      <div
-        className={`md:hidden fixed top-0 left-0 right-0 bottom-0 z-30 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-      >
-        <div className="absolute top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50" onClick={onClose}></div>
-        <div className="absolute top-0 left-0 right-0 bottom-0 bg-white overflow-y-auto">
-          {/* Spacer for status bar / Dynamic Island */}
-          <div style={{ height: '59px', background: '#1a1a2e', flexShrink: 0 }}></div>
-          {/* Back button header */}
-          <div className="bg-primary px-4 py-3 flex items-center">
+      {/* Mobile version — full-screen overlay */}
+      {isOpen && (
+      <div className="md:hidden fixed top-0 left-0 right-0 bottom-0 z-50 bg-white">
+        {/* Fixed header — always visible above Dynamic Island */}
+        <div className="fixed top-0 left-0 right-0 z-50 bg-primary" style={{ paddingTop: '59px' }}>
+          <div className="px-4 py-3">
             <button
               onClick={onClose}
               className="flex items-center gap-2 text-white font-medium text-sm"
@@ -389,31 +385,22 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
               Back to Routes
             </button>
           </div>
-          {/* Portrait view map */}
-          <div className="relative w-full h-[240px]">
+        </div>
+
+        {/* Scrollable content below fixed header (59px + ~44px header = 103px) */}
+        <div className="absolute top-0 left-0 right-0 bottom-0 overflow-y-auto overflow-x-hidden" style={{ paddingTop: '103px' }}>
+          {/* Map */}
+          <div className="w-full h-[240px]">
             <RouteMapPreview route={route} height={240} detailMode={true} userLocation={userLocation} />
-            <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-sm">
-              <div className="flex items-center gap-2">
-                <Navigation className="h-5 w-5 text-primary" />
-                <div>
-                  <div className="text-xs font-medium">Start</div>
-                  <div className="text-sm">
-                    {typeof route.startPoint === 'object' && route.startPoint && 'name' in route.startPoint 
-                      ? String(route.startPoint.name) 
-                      : 'Start location'}
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
-          <div className="p-4">            
-            {/* Route details with portrait orientation */}
+          <div className="px-4 pt-4 pb-8">
+            {/* Route details */}
             <div className="mb-4">
               <h2 className="text-xl font-semibold">{route.name.replace(/\s*\([0-9.]+km\)/i, '')}</h2>
               <p className="text-gray-500">{route.description}</p>
             </div>
-            
+
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="text-center p-3 bg-neutral-100 rounded-lg">
                 <p className="text-xs text-gray-500">Distance</p>
@@ -426,107 +413,31 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
               <div className="text-center p-3 bg-neutral-100 rounded-lg">
                 <p className="text-xs text-gray-500">Est. Time</p>
                 <p className="font-semibold">
-                  {route.estimatedTime && route.estimatedTime >= 60 
+                  {route.estimatedTime && route.estimatedTime >= 60
                     ? `${Math.floor(route.estimatedTime / 60)}h ${route.estimatedTime % 60}m`
                     : `${route.estimatedTime || 0}m`}
                 </p>
               </div>
             </div>
-            
-            {/* Primary action buttons */}
+
+            {/* Actions */}
             <div className="mb-6 space-y-2">
               <Button onClick={onStartRun} className="w-full bg-primary hover:bg-primary/90 py-6 text-lg">
                 Start Run
               </Button>
-              
-              <Button 
-                onClick={sendToGarminWatch} 
+
+              <Button
+                onClick={sendToGarminWatch}
                 disabled={sendingToWatch}
-                variant="outline" 
+                variant="outline"
                 className="w-full flex items-center justify-center gap-2 py-4"
               >
-                <Watch className="h-5 w-5" /> 
+                <Watch className="h-5 w-5" />
                 {sendingToWatch ? "Sending to Watch..." : "Send to Garmin Watch"}
               </Button>
-              
-              {/* Bespoke Music Playlist - Mobile View */}
-              <div className="mt-4 p-4 border border-gray-100 rounded-lg bg-gradient-to-r from-gray-50 to-white">
-                <h3 className="text-base font-medium mb-2">Bespoke Music Playlist</h3>
-                <p className="text-xs text-gray-500 mb-3">Tailored for this specific route</p>
-                <div className="flex space-x-3">
-                  <Button 
-                    onClick={() => togglePlaylist('spotify')}
-                    variant={activePlaylist === 'spotify' ? 'default' : 'outline'} 
-                    className={`flex-1 flex items-center justify-center ${activePlaylist === 'spotify' ? 'bg-green-50' : ''}`} 
-                    size="sm"
-                  >
-                    <FaSpotify className="h-5 w-5 mr-2 text-green-500" /> 
-                    Spotify
-                  </Button>
-                  <Button 
-                    onClick={() => togglePlaylist('apple')}
-                    variant={activePlaylist === 'apple' ? 'default' : 'outline'} 
-                    className={`flex-1 flex items-center justify-center ${activePlaylist === 'apple' ? 'bg-pink-50' : ''}`} 
-                    size="sm"
-                  >
-                    <SiApplemusic className="h-5 w-5 mr-2 text-pink-600" /> 
-                    Apple Music
-                  </Button>
-                </div>
-                
-                {/* Spotify Playlist Details - Mobile */}
-                {activePlaylist === 'spotify' && (
-                  <div className="mt-3 p-3 bg-green-50 rounded-md">
-                    <h4 className="text-sm font-medium text-green-800">Perfect Soundtrack for Your Run</h4>
-                    <p className="text-xs text-green-600 mb-2">Tempo-matched to your pace, inspired by this route</p>
-                    <div className="space-y-2">
-                      <div className="flex items-center text-sm">
-                        <span className="w-6 text-center">1</span>
-                        <span className="flex-1 truncate">Running Cadence (162 BPM)</span>
-                        <span className="text-xs text-gray-500">3:42</span>
-                      </div>
-                      <div className="flex items-center text-sm">
-                        <span className="w-6 text-center">2</span>
-                        <span className="flex-1 truncate">Energize Your Route</span>
-                        <span className="text-xs text-gray-500">4:15</span>
-                      </div>
-                      <div className="flex items-center text-sm">
-                        <span className="w-6 text-center">3</span>
-                        <span className="flex-1 truncate">Perfect Pace</span>
-                        <span className="text-xs text-gray-500">3:28</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Apple Music Playlist Details - Mobile */}
-                {activePlaylist === 'apple' && (
-                  <div className="mt-3 p-3 bg-pink-50 rounded-md">
-                    <h4 className="text-sm font-medium text-pink-800">Custom Running Playlist</h4>
-                    <p className="text-xs text-pink-600 mb-2">Curated for your running style on this route</p>
-                    <div className="space-y-2">
-                      <div className="flex items-center text-sm">
-                        <span className="w-6 text-center">1</span>
-                        <span className="flex-1 truncate">Runner's High (160 BPM)</span>
-                        <span className="text-xs text-gray-500">3:55</span>
-                      </div>
-                      <div className="flex items-center text-sm">
-                        <span className="w-6 text-center">2</span>
-                        <span className="flex-1 truncate">Steady Rhythm</span>
-                        <span className="text-xs text-gray-500">4:05</span>
-                      </div>
-                      <div className="flex items-center text-sm">
-                        <span className="w-6 text-center">3</span>
-                        <span className="flex-1 truncate">Final Sprint</span>
-                        <span className="text-xs text-gray-500">3:22</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
-            
-            {/* Mobile-friendly route features */}
+
+            {/* Route features */}
             <div className="mb-5">
               <h3 className="font-medium mb-2">Route Features</h3>
               <div className="flex flex-wrap gap-2">
@@ -537,45 +448,14 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
                 ))}
               </div>
             </div>
-            
-            {/* Turn-by-turn directions section */}
+
+            {/* Directions */}
             <div className="mb-5">
               <h3 className="font-medium mb-2">Directions</h3>
               <RouteDirections directions={Array.isArray(route.directions) ? route.directions : []} />
             </div>
-            
-            {/* Live data section */}
-            <div className="mb-5">
-              <h3 className="font-medium mb-2">Live Data</h3>
-              <div className="flex gap-4">
-                <div className="flex-1 p-3 bg-neutral-100 rounded-lg">
-                  <div className="flex items-center">
-                    <div className="mr-3 text-green-500">
-                      <i className="fas fa-users text-lg"></i>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Crowd Level</p>
-                      <p className="font-semibold">
-                        {route.trafficLevel === 1 ? "Low" : route.trafficLevel === 2 ? "Medium" : "High"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex-1 p-3 bg-neutral-100 rounded-lg">
-                  <div className="flex items-center">
-                    <div className="mr-3 text-green-500">
-                      <i className="fas fa-shield-alt text-lg"></i>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Safety Rating</p>
-                      <p className="font-semibold">High</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Secondary actions */}
+
+            {/* Save / Share */}
             <div className="flex gap-3 mb-4">
               <Button variant="outline" className="flex-1" onClick={handleSaveRoute} disabled={isSaving}>
                 {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Heart className={`h-4 w-4 mr-2 ${isSaved ? "fill-red-500 text-red-500" : ""}`} />}
@@ -588,6 +468,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
           </div>
         </div>
       </div>
+      )}
 
     </>
   );
