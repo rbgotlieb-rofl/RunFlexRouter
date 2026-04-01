@@ -1010,22 +1010,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`  ⚠️ "all" mode: out-and-back generation failed:`, err);
         }
 
-        // --- 3) A-TO-B to POI ROUTES (20-30%): 3 routes to parks/landmarks/water ---
+        // --- 3) A-TO-B to POI ROUTES: routes to parks/landmarks/water ---
         try {
-          const nearbyPOIs = await findNearbyPOIsForAllMode(startPoint.lat, startPoint.lng, 6);
-          console.log(`  Found ${nearbyPOIs.length} nearby POIs via geocoding`);
+          const nearbyPOIs = await findNearbyPOIsForAllMode(startPoint.lat, startPoint.lng, 10);
+          console.log(`  Found ${nearbyPOIs.length} nearby POIs: ${nearbyPOIs.map(p => `${p.name}(${p.distKm.toFixed(1)}km,${p.category})`).join(', ')}`);
 
           const poiRoutes = await Promise.all(
-            nearbyPOIs.slice(0, 4).map(async (poi) => {
+            nearbyPOIs.slice(0, 6).map(async (poi) => {
               const route = await fetchMapboxWalking([
                 [startPoint.lng, startPoint.lat],
                 [poi.point.lng, poi.point.lat]
               ]);
-              if (!route) return null;
+              if (!route) { console.log(`    ❌ POI "${poi.name}": Mapbox walking route failed`); return null; }
               const km = route.distance / 1000;
               const mins = estimateRunningMins(km);
-              const minPOIMins = td <= 10 ? 1 : td <= 20 ? 2 : 5;
-              if (mins < minPOIMins || mins > 120) return null;
+              const minPOIMins = 2; // Minimum 2 min running time
+              if (mins < minPOIMins) { console.log(`    ❌ POI "${poi.name}": too close (${mins}min)`); return null; }
+              if (mins > 120) { console.log(`    ❌ POI "${poi.name}": too far (${mins}min)`); return null; }
               const routePath = (route.geometry.coordinates as [number, number][]).map(([lng2, lat2]) => ({ lat: lat2, lng: lng2 }));
               // Classify surface from actual Mapbox step data
               const detectedPoiSurface = classifySurfaceType(route.steps || []);
@@ -1059,7 +1060,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ).then(r => r.filter((x): x is NonNullable<typeof x> => x !== null));
 
           allResults.push(...poiRoutes.slice(0, 4));
-          console.log(`  ✅ "all" mode: ${Math.min(poiRoutes.length, 4)} A-to-B POI routes`);
+          console.log(`  ✅ "all" mode: ${poiRoutes.length} POI routes found, using ${Math.min(poiRoutes.length, 4)}`);
         } catch (err) {
           console.log(`  ⚠️ "all" mode: POI route generation failed:`, err);
         }
@@ -1113,6 +1114,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!hasAtoB) console.log(`  ⚠️ "all" mode: no A-to-B routes generated`);
 
         // Guarantee at least 1 trail route — search for green spaces within 20 miles
+        const surfaceCounts = { road: 0, trail: 0, mixed: 0, none: 0 };
+        validAllResults.forEach((r: any) => { surfaceCounts[r.surfaceType || 'none']++; });
+        console.log(`  Surface types: road=${surfaceCounts.road} trail=${surfaceCounts.trail} mixed=${surfaceCounts.mixed} none=${surfaceCounts.none}`);
         const hasTrail = validAllResults.some((r: any) => r.surfaceType === 'trail');
         if (!hasTrail) {
           console.log(`  🌲 No trail routes found, searching for green spaces within 20 miles...`);
