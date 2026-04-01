@@ -303,24 +303,28 @@ async function routePassesThroughGreenArea(
     routePath[Math.floor(routePath.length * 0.75)],
   ];
 
+  // Search for multiple types of green spaces
+  const greenQueries = ['park', 'garden', 'wood', 'nature'];
+
   for (const pt of samplePoints) {
-    try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/park.json?proximity=${pt.lng},${pt.lat}&types=poi&limit=1&access_token=${token}`;
-      const resp = await fetch(url);
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      if (data.features?.length > 0) {
-        const poi = data.features[0];
-        const poiLat = poi.center[1];
-        const poiLng = poi.center[0];
-        // Check if the park is within ~500m of the route point
-        const dLat = (poiLat - pt.lat) * 111;
-        const dLng = (poiLng - pt.lng) * 111 * Math.cos(pt.lat * Math.PI / 180);
-        const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-        if (distKm < 0.5) return true;
+    for (const query of greenQueries) {
+      try {
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?proximity=${pt.lng},${pt.lat}&types=poi&limit=1&access_token=${token}`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        if (data.features?.length > 0) {
+          const poi = data.features[0];
+          const poiLat = poi.center[1];
+          const poiLng = poi.center[0];
+          const dLat = (poiLat - pt.lat) * 111;
+          const dLng = (poiLng - pt.lng) * 111 * Math.cos(pt.lat * Math.PI / 180);
+          const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
+          if (distKm < 0.8) return true; // Within 800m of route
+        }
+      } catch {
+        continue;
       }
-    } catch {
-      continue;
     }
   }
   return false;
@@ -1013,7 +1017,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (!route) return null;
               const km = route.distance / 1000;
               const mins = Math.round(route.duration / 60);
-              const minPOIMins = td <= 10 ? 1 : td <= 20 ? 3 : 10;
+              const minPOIMins = td <= 10 ? 1 : td <= 20 ? 2 : 5;
               if (mins < minPOIMins || mins > 120) return null;
               const routePath = (route.geometry.coordinates as [number, number][]).map(([lng2, lat2]) => ({ lat: lat2, lng: lng2 }));
               // Classify surface from actual Mapbox step data
@@ -1022,6 +1026,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const isGreenSpace = poi.category === 'park' || poi.category === 'water';
               const poiFeatures: string[] = [poi.category];
               if (isGreenSpace) poiFeatures.push('scenic');
+              // Routes TO green spaces are classified as trail regardless of road detection
+              // (runners will be running through the green space, not just on roads to reach it)
+              const poiSurface = isGreenSpace ? 'trail' as const : detectedPoiSurface;
 
               return {
                 id: 0,
@@ -1030,7 +1037,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 distance: km, estimatedTime: mins,
                 elevationGain: Math.round(km * 8),
                 routePath, routeType: 'a_to_b',
-                surfaceType: detectedPoiSurface,
+                surfaceType: poiSurface,
                 sceneryRating: isGreenSpace ? 4 : 2,
                 trafficLevel: isGreenSpace ? 1 : 2,
                 directions: [
@@ -1044,8 +1051,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             })
           ).then(r => r.filter((x): x is NonNullable<typeof x> => x !== null));
 
-          allResults.push(...poiRoutes.slice(0, 3));
-          console.log(`  ✅ "all" mode: ${Math.min(poiRoutes.length, 3)} A-to-B POI routes`);
+          allResults.push(...poiRoutes.slice(0, 4));
+          console.log(`  ✅ "all" mode: ${Math.min(poiRoutes.length, 4)} A-to-B POI routes`);
         } catch (err) {
           console.log(`  ⚠️ "all" mode: POI route generation failed:`, err);
         }
@@ -1151,7 +1158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   distance: km, estimatedTime: mins,
                   elevationGain: Math.round(km * 10),
                   routePath, routeType: 'a_to_b',
-                  surfaceType: detectedSurface === 'road' ? 'mixed' : detectedSurface,
+                  surfaceType: 'trail' as any, // Route to a green space is always trail
                   sceneryRating: 4, trafficLevel: 1,
                   directions: [
                     { instruction: `Head towards ${greenPOI.name}.`, distance: 0.1, duration: 0.5 },
