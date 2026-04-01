@@ -371,9 +371,9 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
         </Sheet>
       </div>
     
-      {/* Mobile version — full-screen overlay */}
+      {/* Mobile/App version — full-screen overlay (always used on Capacitor) */}
       {isOpen && (
-      <div className="md:hidden fixed top-0 left-0 right-0 bottom-0 z-50 bg-white">
+      <div className="fixed top-0 left-0 right-0 bottom-0 z-50 bg-white">
         {/* Fixed header — always visible above Dynamic Island */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-primary" style={{ paddingTop: '59px' }}>
           <div className="px-4 py-3">
