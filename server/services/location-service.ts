@@ -77,7 +77,7 @@ export async function searchLocations(query: string, proximity?: string, country
  * Geocode a location string (address, place name, postcode) to coordinates.
  * Works globally via Mapbox Geocoding API.
  */
-export async function geocodeLocation(query: string, proximity?: string): Promise<Point | null> {
+export async function geocodeLocation(query: string, proximity?: string, country?: string): Promise<Point | null> {
   const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN;
   if (!mapboxToken) {
     console.error("Mapbox token not available for geocoding");
@@ -93,6 +93,9 @@ export async function geocodeLocation(query: string, proximity?: string): Promis
 
     if (proximity) {
       params.set('proximity', proximity);
+    }
+    if (country) {
+      params.set('country', country);
     }
 
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`;
