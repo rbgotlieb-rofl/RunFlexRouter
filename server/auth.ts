@@ -50,8 +50,15 @@ export function setupAuth(app: Express): void {
     console.log("Using MemoryStore for sessions (dev mode — sessions lost on restart)");
   }
 
-  // Detect if app is running behind HTTPS (Railway) or locally
-  const isProduction = !!process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+  // Detect production: Railway sets RAILWAY_PUBLIC_DOMAIN, or check for DATABASE_URL (Neon)
+  // which is only configured on the production server, never locally
+  const isProduction = !!(
+    process.env.RAILWAY_PUBLIC_DOMAIN ||
+    process.env.RAILWAY_ENVIRONMENT ||
+    process.env.RAILWAY_SERVICE_NAME ||
+    process.env.DATABASE_URL
+  );
+  console.log(`Auth: isProduction=${isProduction} (secure cookies=${isProduction}, sameSite=${isProduction ? 'none' : 'lax'})`);
 
   const sessionMiddleware = session({
     secret: process.env.SESSION_SECRET || "runflex-dev-secret",
