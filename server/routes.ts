@@ -814,7 +814,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const searches = [
             { query: "park", category: "park" },
+            { query: "wood", category: "park" },
+            { query: "forest", category: "park" },
+            { query: "nature reserve", category: "park" },
+            { query: "common", category: "park" },
+            { query: "heath", category: "park" },
             { query: "river", category: "water" },
+            { query: "trail", category: "park" },
             { query: "museum", category: "landmark" },
           ];
 
@@ -836,7 +842,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const dLat = (pLat - lat) * 111;
                 const dLng = (pLng - lng) * 111 * Math.cos(lat * Math.PI / 180);
                 const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-                if (distKm >= 0.5 && distKm <= 10) {
+                if (distKm >= 0.5 && distKm <= 32) { // ~20 miles
                   const name = feat.text || feat.place_name?.split(',')[0] || query;
                   results.push({ name, point: { lat: pLat, lng: pLng }, distKm, category });
                 }
@@ -1084,7 +1090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }));
 
-        // Guarantee all route types: check we have at least 1 of each category
+        // Guarantee all route types
         const hasLoop = validAllResults.some((r: any) => r.routeType === 'loop');
         const hasOAB = validAllResults.some((r: any) => r.routeType === 'out_and_back');
         const hasAtoB = validAllResults.some((r: any) => r.routeType === 'a_to_b');
@@ -1092,8 +1098,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!hasOAB) console.log(`  ⚠️ "all" mode: no out-and-back routes generated`);
         if (!hasAtoB) console.log(`  ⚠️ "all" mode: no A-to-B routes generated`);
 
+        // Guarantee at least 1 trail route — search for green spaces within 20 miles
+        const hasTrail = validAllResults.some((r: any) => r.surfaceType === 'trail');
+        if (!hasTrail) {
+          console.log(`  🌲 No trail routes found, searching for green spaces within 20 miles...`);
+          try {
+            const greenSearches = ['park', 'wood', 'forest', 'nature reserve', 'heath', 'common'];
+            let greenPOI: { name: string; point: { lat: number; lng: number }; distKm: number } | null = null;
+
+            for (const query of greenSearches) {
+              if (greenPOI) break;
+              try {
+                const params = new URLSearchParams({
+                  access_token: mapboxToken,
+                  types: 'poi',
+                  proximity: `${startPoint.lng},${startPoint.lat}`,
+                  limit: '3',
+                });
+                const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`;
+                const resp = await fetch(url);
+                if (!resp.ok) continue;
+                const data = await resp.json();
+                for (const feat of (data.features || [])) {
+                  const pLat = feat.center[1];
+                  const pLng = feat.center[0];
+                  const dLat = (pLat - startPoint.lat) * 111;
+                  const dLng = (pLng - startPoint.lng) * 111 * Math.cos(startPoint.lat * Math.PI / 180);
+                  const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
+                  if (distKm >= 0.5 && distKm <= 32) {
+                    const name = feat.text || feat.place_name?.split(',')[0] || query;
+                    greenPOI = { name, point: { lat: pLat, lng: pLng }, distKm };
+                    break;
+                  }
+                }
+              } catch { continue; }
+            }
+
+            if (greenPOI) {
+              const trailRoute = await fetchMapboxWalking([
+                [startPoint.lng, startPoint.lat],
+                [greenPOI.point.lng, greenPOI.point.lat]
+              ]);
+              if (trailRoute) {
+                const km = trailRoute.distance / 1000;
+                const mins = Math.round(trailRoute.duration / 60);
+                const routePath = (trailRoute.geometry.coordinates as [number, number][]).map(([lng, lat]) => ({ lat, lng }));
+                const detectedSurface = classifySurfaceType(trailRoute.steps || []);
+                validAllResults.push({
+                  id: 0,
+                  name: `Trail to ${greenPOI.name} (${km.toFixed(1)} km • ${mins} min)`,
+                  startPoint, endPoint: greenPOI.point,
+                  distance: km, estimatedTime: mins,
+                  elevationGain: Math.round(km * 10),
+                  routePath, routeType: 'a_to_b',
+                  surfaceType: detectedSurface === 'road' ? 'mixed' : detectedSurface,
+                  sceneryRating: 4, trafficLevel: 1,
+                  directions: [
+                    { instruction: `Head towards ${greenPOI.name}.`, distance: 0.1, duration: 0.5 },
+                    { instruction: `Continue through green spaces to ${greenPOI.name}.`, distance: km / 2, duration: mins / 2 },
+                    { instruction: `Arrive at ${greenPOI.name}. ${km.toFixed(1)}km total.`, distance: km, duration: mins },
+                  ],
+                  features: ['scenic', 'low_traffic', 'park'],
+                } as any);
+                console.log(`  🌲 Added trail route to ${greenPOI.name} (${km.toFixed(1)}km, ${detectedSurface})`);
+              }
+            }
+          } catch (err) {
+            console.log(`  ⚠️ Trail route generation failed:`, err);
+          }
+        }
+
         validAllResults.forEach((r: any, i: number) => { r.id = i + 1; });
-        console.log(`✅ "all" mode total: ${validAllResults.length} routes (loop=${hasLoop}, oab=${hasOAB}, atob=${hasAtoB})`);
+        const trailCount = validAllResults.filter((r: any) => r.surfaceType === 'trail' || r.surfaceType === 'mixed').length;
+        console.log(`✅ "all" mode total: ${validAllResults.length} routes (loop=${hasLoop}, oab=${hasOAB}, atob=${hasAtoB}, trail/mixed=${trailCount})`);
         return res.json(validAllResults);
       }
 
