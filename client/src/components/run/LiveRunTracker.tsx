@@ -7,9 +7,10 @@ import { useQuery } from '@tanstack/react-query';
 import { addArrowLayer, addFlagLayers } from '@/lib/route-arrows';
 import {
   Play, Pause, Square, X, Navigation, Clock, Footprints, Gauge, ChevronUp, ChevronDown,
-  Locate, AlertTriangle
+  Locate, AlertTriangle, ArrowUp, CornerDownRight, RotateCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useNavigation } from '@/hooks/use-navigation';
 
 interface LiveRunTrackerProps {
   route: Route;
@@ -65,6 +66,9 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
   const positionsRef = useRef<GeoPosition[]>([]);
 
   const { position, error: geoError, isTracking, isAcquiring, startTracking, stopTracking } = useGeolocation();
+
+  // Turn-by-turn navigation
+  const navState = useNavigation(route, position, runState === 'running');
 
   const { data: config } = useQuery<{ mapboxToken: string }>({
     queryKey: ['/api/config'],
@@ -314,6 +318,56 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
           </div>
         )}
       </div>
+
+      {/* Turn-by-turn navigation banner */}
+      {runState === 'running' && navState.currentInstruction && (
+        <div className={`px-4 py-3 ${navState.isOffRoute ? 'bg-red-600' : 'bg-primary'} text-white`}>
+          {navState.isOffRoute ? (
+            <div className="flex items-center gap-3">
+              <RotateCw className="h-6 w-6 shrink-0 animate-spin" />
+              <div>
+                <p className="font-semibold text-sm">Off Route</p>
+                <p className="text-xs opacity-90">{Math.round(navState.offRouteDistance * 1000)}m from route — head back to the path</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 rounded-lg p-2 shrink-0">
+                {navState.distanceToNextTurn !== null && navState.distanceToNextTurn < 0.05
+                  ? <CornerDownRight className="h-6 w-6" />
+                  : <ArrowUp className="h-6 w-6" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm truncate">{navState.currentInstruction}</p>
+                {navState.distanceToNextTurn !== null && navState.nextInstruction && (
+                  <p className="text-xs opacity-80 mt-0.5">
+                    {navState.distanceToNextTurn >= 1
+                      ? `${navState.distanceToNextTurn.toFixed(1)}km`
+                      : `${Math.round(navState.distanceToNextTurn * 1000)}m`}
+                    {' → '}{navState.nextInstruction.substring(0, 40)}
+                  </p>
+                )}
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-lg font-bold tabular-nums">
+                  {navState.distanceToNextTurn !== null
+                    ? navState.distanceToNextTurn >= 1
+                      ? `${navState.distanceToNextTurn.toFixed(1)}km`
+                      : `${Math.round(navState.distanceToNextTurn * 1000)}m`
+                    : ''}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Alert banner */}
+          {navState.upcomingAlert && !navState.isOffRoute && (
+            <div className="mt-2 bg-white/20 rounded-lg px-3 py-2 text-sm font-medium">
+              {navState.upcomingAlert}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
         {routeDistanceKm > 0 && runState !== 'ready' && (
