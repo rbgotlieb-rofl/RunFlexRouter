@@ -563,6 +563,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Running pace: 5 min/km. Mapbox returns walking durations (~12 min/km).
+      // Convert walking time to running time: multiply by 5/12 ≈ 0.42
+      const RUNNING_PACE_MIN_PER_KM = 5;
+      const WALK_TO_RUN_FACTOR = 0.42;
+      const estimateRunningMins = (distKm: number) => Math.round(distKm * RUNNING_PACE_MIN_PER_KM);
+      const walkingToRunningMins = (walkingSeconds: number) => Math.round((walkingSeconds / 60) * WALK_TO_RUN_FACTOR);
+
       // Shared helper: fetch walking route with step data for surface classification
       async function fetchMapboxWalkingWithSteps(coords: [number, number][]): Promise<{ geometry: any; distance: number; duration: number; steps?: any[] } | null> {
         const coordStr = coords.map(([lng, lat]) => `${lng},${lat}`).join(";");
@@ -589,7 +596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           let baseKm: number;
           if (targetType === 'duration' && effectiveTargetDuration) {
-            baseKm = Math.max(0.8, (effectiveTargetDuration / 60) * 5);
+            baseKm = Math.max(0.8, effectiveTargetDuration / RUNNING_PACE_MIN_PER_KM);
           } else {
             baseKm = effectiveDistance || targetDistance || 5;
           }
@@ -619,8 +626,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const loops = variantsRaw.map((r, idx) => {
             appendStartIfNeeded(r.geometry, startPoint.lng, startPoint.lat);
             const km = r.distance / 1000;
-            const minStr = (r.duration / 60).toFixed(1);
-            
+            const runMins = estimateRunningMins(km);
+            const minStr = String(runMins);
+
             const routePath = r.geometry.coordinates.map(coord => ({
               lat: coord[1],
               lng: coord[0]
@@ -638,15 +646,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
               {
                 instruction: `Continue along the loop route for approximately ${(km/2).toFixed(1)}km to reach the halfway point.`,
                 distance: km/2,
-                duration: (r.duration / 60) / 2
+                duration: runMins / 2
               },
               {
                 instruction: `Complete the second half of your loop, returning to your starting point.`,
                 distance: km/2,
-                duration: (r.duration / 60) / 2
+                duration: runMins / 2
               }
             ];
-            
+
             return {
               id: idx + 1,
               name: `Loop Option ${idx + 1} (${km.toFixed(1)} km • ${minStr} min)`,
@@ -656,8 +664,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               geometry: r.geometry,
               routePath: routePath,
               distance: km,
-              duration: r.duration / 60,
-              estimatedTime: Math.round(r.duration / 60),
+              duration: runMins,
+              estimatedTime: runMins,
               circular: true,
               routeType: 'loop',
               sceneryRating: 3,
@@ -701,7 +709,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const pass2Loops = pass2Raw.map((r, idx) => {
               appendStartIfNeeded(r.geometry, startPoint.lng, startPoint.lat);
               const km = r.distance / 1000;
-              const minStr = (r.duration / 60).toFixed(1);
+              const runMins2 = estimateRunningMins(km);
               const routePath = r.geometry.coordinates.map(coord => ({
                 lat: coord[1],
                 lng: coord[0]
@@ -710,15 +718,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const isClean = !hasRetracing(r.geometry.coordinates) && isGoodLoop(r.geometry.coordinates);
               const directions = [
                 { instruction: `Start your ${km.toFixed(1)}km loop from the selected location.`, distance: 0.1, duration: 0.5 },
-                { instruction: `Continue along the loop for ${(km/2).toFixed(1)}km to the halfway point.`, distance: km/2, duration: r.duration/120 },
-                { instruction: `Complete the loop back to start.`, distance: km, duration: r.duration/60 },
+                { instruction: `Continue along the loop for ${(km/2).toFixed(1)}km to the halfway point.`, distance: km/2, duration: runMins2/2 },
+                { instruction: `Complete the loop back to start.`, distance: km, duration: runMins2 },
               ];
-              const estMins = Math.round(r.duration / 60);
               return {
                 id: allLoops.length + idx + 1,
                 name: '',
                 startPoint, endPoint: startPoint,
-                distance: km, estimatedTime: estMins,
+                distance: km, estimatedTime: runMins2,
                 elevationGain: Math.round(km * 8),
                 routePath, routeType: 'loop' as const,
                 sceneryRating: 3, trafficLevel: 2, directions,
@@ -871,7 +878,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const loopBearings = [0, 90, 180, 270];
           const loopVariants = await Promise.all(
             loopDurations.map(async (dur, i) => {
-              const km = Math.max(0.8, (dur / 60) * 5);
+              const km = Math.max(0.8, dur / RUNNING_PACE_MIN_PER_KM);
               try {
                 return await generateCircularRoute(
                   [startPoint.lng, startPoint.lat],
@@ -886,7 +893,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const loopRoutesRaw = loopVariants.map((r, idx) => {
             appendStartIfNeeded(r.geometry, startPoint.lng, startPoint.lat);
             const km = r.distance / 1000;
-            const mins = Math.round(r.duration / 60);
+            const mins = estimateRunningMins(km);
             const routePath = r.geometry.coordinates.map((coord: [number, number]) => ({ lat: coord[1], lng: coord[0] }));
             const score = computeLoopScore(r.geometry.coordinates);
             const isClean = !hasRetracing(r.geometry.coordinates) && isGoodLoop(r.geometry.coordinates);
@@ -951,7 +958,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const oabBearings = [45, 165, 285];
           const oabRoutes = await Promise.all(
             oabDurations.map(async (dur, i) => {
-              const oneWayKm = (dur / 60) * 5 / 2;
+              const oneWayKm = dur / RUNNING_PACE_MIN_PER_KM / 2;
               const bearing = oabBearings[i];
               const toRad = (d: number) => (d * Math.PI) / 180;
               const R = 6371;
@@ -969,7 +976,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (!returnLeg) return null;
 
               const totalDist = (outbound.distance + returnLeg.distance) / 1000;
-              const totalDur = Math.round((outbound.duration + returnLeg.duration) / 60);
+              const totalDur = estimateRunningMins(totalDist);
               const outCoords = outbound.geometry.coordinates as [number, number][];
               const retCoords = (returnLeg.geometry.coordinates as [number, number][]).slice(1);
               const fullCoords = [...outCoords, ...retCoords];
@@ -1016,7 +1023,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ]);
               if (!route) return null;
               const km = route.distance / 1000;
-              const mins = Math.round(route.duration / 60);
+              const mins = estimateRunningMins(km);
               const minPOIMins = td <= 10 ? 1 : td <= 20 ? 2 : 5;
               if (mins < minPOIMins || mins > 120) return null;
               const routePath = (route.geometry.coordinates as [number, number][]).map(([lng2, lat2]) => ({ lat: lat2, lng: lng2 }));
@@ -1081,7 +1088,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
 
-        const allTargetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? (effectiveTargetDuration / 60) * 5 : 5);
+        const allTargetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? effectiveTargetDuration / RUNNING_PACE_MIN_PER_KM : 5);
         // In "all" mode, skip duration/distance filtering — show the full variety of route types
         const validAllResults = filterValidRoutes(allResults, 0.2, undefined, undefined, surfaceType, requiredFeatures);
 
@@ -1148,7 +1155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ]);
               if (trailRoute) {
                 const km = trailRoute.distance / 1000;
-                const mins = Math.round(trailRoute.duration / 60);
+                const mins = estimateRunningMins(km);
                 const routePath = (trailRoute.geometry.coordinates as [number, number][]).map(([lng, lat]) => ({ lat, lng }));
                 const detectedSurface = classifySurfaceType(trailRoute.steps || []);
                 validAllResults.push({
@@ -1199,7 +1206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
-      const targetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? (effectiveTargetDuration / 60) * 5 : 5);
+      const targetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? effectiveTargetDuration / RUNNING_PACE_MIN_PER_KM : 5);
       const validRoutes = filterValidRoutes(routes, targetKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
       validRoutes.forEach((r, i) => { r.id = i + 1; });
 

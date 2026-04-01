@@ -2397,7 +2397,7 @@ async function createNewRoutes(
       const routeType = routeTypes[i % routeTypes.length];
       
       // Estimated duration
-      const duration = 15 * distance; // Rough estimate for time
+      const duration = 5 * distance; // 5 min/km running pace
       
       // Generate simple directions
       const simpleDirections = generateSimpleDirections(routePath, distance, duration);
