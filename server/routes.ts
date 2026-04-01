@@ -287,6 +287,123 @@ function classifySurfaceType(steps: any[]): 'road' | 'trail' | 'mixed' {
 }
 
 /**
+ * Check if it's near sunset or dark at the user's location.
+ * Returns { daytime, nearSunset } where nearSunset means within 2h of sunset or after.
+ */
+async function getSunsetStatus(lat: number, lng: number): Promise<{ daytime: boolean; nearSunset: boolean }> {
+  try {
+    const res = await fetch(`https://api.sunrisesunset.io/json?lat=${lat}&lng=${lng}&date=today&timezone=auto`);
+    if (!res.ok) return { daytime: true, nearSunset: false };
+    const data = await res.json();
+    if (data.status !== 'OK') return { daytime: true, nearSunset: false };
+
+    // Parse sunset time (format: "7:42:18 PM")
+    const sunsetStr = data.results?.sunset;
+    if (!sunsetStr) return { daytime: true, nearSunset: false };
+
+    // Build today's date with the sunset time
+    const now = new Date();
+    const [time, period] = sunsetStr.split(' ');
+    const [h, m] = time.split(':').map(Number);
+    let hour = h;
+    if (period === 'PM' && h !== 12) hour += 12;
+    if (period === 'AM' && h === 12) hour = 0;
+
+    const sunset = new Date(now);
+    sunset.setHours(hour, m, 0, 0);
+
+    const hoursUntilSunset = (sunset.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+    return {
+      daytime: hoursUntilSunset > 2,
+      nearSunset: hoursUntilSunset <= 2,
+    };
+  } catch {
+    return { daytime: true, nearSunset: false }; // Default to daytime if API fails
+  }
+}
+
+/**
+ * Check if a route follows well-lit streets using OpenStreetMap Overpass API.
+ * Samples points along the route and checks for streets tagged lit=yes.
+ */
+async function isRouteLit(routePath: { lat: number; lng: number }[]): Promise<boolean> {
+  if (routePath.length < 2) return false;
+  try {
+    // Sample 5 evenly spaced points along the route
+    const indices = [0, 0.25, 0.5, 0.75, 1].map(f => Math.floor(f * (routePath.length - 1)));
+    const samplePoints = indices.map(i => routePath[i]);
+
+    const aroundClauses = samplePoints
+      .map(p => `way["lit"="yes"]["highway"](around:150,${p.lat},${p.lng});`)
+      .join('');
+
+    const query = `[out:json][timeout:10];(${aroundClauses});out count;`;
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: `data=${encodeURIComponent(query)}`,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const totalLitWays = data.elements?.[0]?.tags?.total ? parseInt(data.elements[0].tags.total) : 0;
+
+    // Route is well-lit if we found lit streets near most sample points
+    // (each sample should find ~2-5 ways if the area is well lit)
+    return totalLitWays >= samplePoints.length;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if a route passes near cultural sites (museums, galleries, theatres, monuments).
+ * Uses Mapbox geocoding to search for cultural POIs near sample points.
+ */
+async function routeHasCulturalSites(routePath: { lat: number; lng: number }[]): Promise<boolean> {
+  if (routePath.length < 2) return false;
+  const token = process.env.MAPBOX_ACCESS_TOKEN;
+  if (!token) return false;
+
+  const culturalQueries = ['museum', 'gallery', 'theatre', 'monument', 'historic', 'cathedral', 'castle'];
+
+  // Check at 3 points along the route
+  const sampleIndices = [
+    Math.floor(routePath.length * 0.25),
+    Math.floor(routePath.length * 0.5),
+    Math.floor(routePath.length * 0.75),
+  ];
+
+  for (const idx of sampleIndices) {
+    const pt = routePath[idx];
+    for (const query of culturalQueries) {
+      try {
+        const params = new URLSearchParams({
+          access_token: token,
+          types: 'poi',
+          proximity: `${pt.lng},${pt.lat}`,
+          limit: '1',
+        });
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        if (data.features?.length > 0) {
+          const poi = data.features[0];
+          const poiLat = poi.center[1];
+          const poiLng = poi.center[0];
+          const dLat = (poiLat - pt.lat) * 111;
+          const dLng = (poiLng - pt.lng) * 111 * Math.cos(pt.lat * Math.PI / 180);
+          const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
+          if (distKm < 1.0) return true; // Cultural site within 1km of route
+        }
+      } catch { continue; }
+    }
+  }
+  return false;
+}
+
+/**
  * Check if a route passes through or near green areas (parks, woods, gardens).
  * Samples 3 points along the route and checks for nearby green POIs via Mapbox.
  */
@@ -1094,16 +1211,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // In "all" mode, skip duration/distance filtering — show the full variety of route types
         const validAllResults = filterValidRoutes(allResults, 0.2, undefined, undefined, surfaceType, requiredFeatures);
 
-        // Enrich routes: check if each route passes through green areas for 'scenic' tag
+        // Enrich routes with real data: scenic, well-lit, cultural sites
+        // 1. Check sunset status for well-lit determination
+        const sunsetStatus = await getSunsetStatus(startPoint.lat, startPoint.lng);
+        console.log(`  🌅 Sunset status: daytime=${sunsetStatus.daytime}, nearSunset=${sunsetStatus.nearSunset}`);
+
+        // 2. Enrich each route
         await Promise.all(validAllResults.map(async (r: any) => {
-          if (r.features && r.features.includes('scenic')) return; // Already tagged
-          if (r.routePath && Array.isArray(r.routePath)) {
+          if (!r.routePath || !Array.isArray(r.routePath)) return;
+          const features = r.features || [];
+
+          // Scenic: check green areas
+          if (!features.includes('scenic')) {
             const isScenic = await routePassesThroughGreenArea(r.routePath);
             if (isScenic) {
-              r.features = [...(r.features || []), 'scenic'];
+              features.push('scenic');
               r.sceneryRating = Math.max(r.sceneryRating || 0, 4);
             }
           }
+
+          // Well-lit: if daytime, all routes are well-lit.
+          // If near sunset, check OpenStreetMap for lit streets.
+          if (!features.includes('well_lit')) {
+            if (sunsetStatus.daytime) {
+              features.push('well_lit');
+            } else {
+              const lit = await isRouteLit(r.routePath);
+              if (lit) features.push('well_lit');
+            }
+          }
+
+          // Cultural sites: check for museums, galleries, etc. near route
+          if (!features.includes('cultural_sites')) {
+            const hasCultural = await routeHasCulturalSites(r.routePath);
+            if (hasCultural) features.push('cultural_sites');
+          }
+
+          r.features = features;
         }));
 
         // Guarantee all route types
