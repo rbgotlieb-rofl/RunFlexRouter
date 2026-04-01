@@ -248,6 +248,45 @@ async function resolveStartPoint(req: any): Promise<{ lat: number; lng: number }
 }
 
 /**
+ * Classify a route's surface type from Mapbox Directions step data.
+ * Analyzes step names and distance to determine road vs trail vs mixed.
+ */
+function classifySurfaceType(steps: any[]): 'road' | 'trail' | 'mixed' {
+  if (!steps || steps.length === 0) return 'road';
+
+  const trailPatterns = /\b(path|footpath|foot path|track|trail|bridleway|towpath|footway|cycleway|cycle path|park|garden|wood|forest|heath|common|green|meadow|field)\b/i;
+  const roadPatterns = /\b(road|street|avenue|lane|drive|close|crescent|terrace|way|boulevard|highway|grove|place|court|square|parade|rise|hill|mount|row|walk|mews|passage)\b/i;
+
+  let trailDistance = 0;
+  let roadDistance = 0;
+
+  for (const step of steps) {
+    const name = step.name || '';
+    const dist = step.distance || 0;
+
+    if (!name || name === '') {
+      // Unnamed segments are typically paths/trails
+      trailDistance += dist;
+    } else if (trailPatterns.test(name)) {
+      trailDistance += dist;
+    } else if (roadPatterns.test(name)) {
+      roadDistance += dist;
+    } else {
+      // Default unknown named segments to road
+      roadDistance += dist;
+    }
+  }
+
+  const total = trailDistance + roadDistance;
+  if (total === 0) return 'road';
+
+  const trailRatio = trailDistance / total;
+  if (trailRatio >= 0.6) return 'trail';
+  if (trailRatio >= 0.25) return 'mixed';
+  return 'road';
+}
+
+/**
  * Check if a route passes through or near green areas (parks, woods, gardens).
  * Samples 3 points along the route and checks for nearby green POIs via Mapbox.
  */
@@ -520,6 +559,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Shared helper: fetch walking route with step data for surface classification
+      async function fetchMapboxWalkingWithSteps(coords: [number, number][]): Promise<{ geometry: any; distance: number; duration: number; steps?: any[] } | null> {
+        const coordStr = coords.map(([lng, lat]) => `${lng},${lat}`).join(";");
+        const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${coordStr}.json?geometries=geojson&overview=full&steps=true&access_token=${encodeURIComponent(mapboxToken)}`;
+        try {
+          const res2 = await fetch(url);
+          if (!res2.ok) return null;
+          const data = (await res2.json()) as any;
+          const route = data?.routes?.[0];
+          if (!route?.geometry?.coordinates) return null;
+          const steps: any[] = [];
+          for (const leg of (route.legs || [])) {
+            for (const step of (leg.steps || [])) {
+              steps.push(step);
+            }
+          }
+          return { geometry: route.geometry, distance: route.distance, duration: route.duration, steps };
+        } catch { return null; }
+      }
+
       // LOOP mode: build multiple circular options close to target distance,
       // all starting/ending at startPoint
       if (routeMode === "loop") {
@@ -688,7 +747,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const result = pick(inBand.length >= 2 ? inBand : allLoops);
 
           const validLoops = filterValidRoutes(result, baseKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
-          validLoops.forEach((r, i) => { r.id = i + 1; });
+
+          // Classify surface type for each loop
+          await Promise.all(validLoops.map(async (l: any) => {
+            try {
+              const path = l.routePath;
+              if (!path || path.length < 4) return;
+              const pts: [number, number][] = [
+                [path[0].lng, path[0].lat],
+                [path[Math.floor(path.length * 0.33)].lng, path[Math.floor(path.length * 0.33)].lat],
+                [path[Math.floor(path.length * 0.66)].lng, path[Math.floor(path.length * 0.66)].lat],
+                [path[path.length - 1].lng, path[path.length - 1].lat],
+              ];
+              const walkResult = await fetchMapboxWalkingWithSteps(pts);
+              if (walkResult?.steps) {
+                l.surfaceType = classifySurfaceType(walkResult.steps);
+              }
+            } catch {}
+          }));
+
+          validLoops.forEach((r: any, i: number) => { r.id = i + 1; });
 
           console.log(
             `✅ Generated ${result.length} loop options, ${validLoops.length} passed validation from lat=${startPoint.lat}, lng=${startPoint.lng} (target ${baseKm.toFixed(
@@ -708,7 +786,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const hasEnd = !!endPoint;
         const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || "";
 
-        async function fetchMapboxWalking(coords: [number, number][]): Promise<{ geometry: any; distance: number; duration: number } | null> {
+        async function fetchMapboxWalking(coords: [number, number][]): Promise<{ geometry: any; distance: number; duration: number; steps?: any[] } | null> {
           const coordStr = coords.map(([lng, lat]) => `${lng},${lat}`).join(";");
           const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${coordStr}.json?geometries=geojson&overview=full&steps=true&access_token=${encodeURIComponent(mapboxToken)}`;
           try {
@@ -717,7 +795,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const data = (await res2.json()) as any;
             const route = data?.routes?.[0];
             if (!route?.geometry?.coordinates) return null;
-            return { geometry: route.geometry, distance: route.distance, duration: route.duration };
+            // Collect all steps from all legs for surface analysis
+            const steps: any[] = [];
+            for (const leg of (route.legs || [])) {
+              for (const step of (leg.steps || [])) {
+                steps.push(step);
+              }
+            }
+            return { geometry: route.geometry, distance: route.distance, duration: route.duration, steps };
           } catch { return null; }
         }
 
@@ -821,6 +906,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .sort((a, b) => (b._loopScore ?? 0) - (a._loopScore ?? 0))
           .slice(0, 4);
 
+          // Classify surface type for each loop using sampled waypoints
+          await Promise.all(loopRoutes.map(async (l: any) => {
+            try {
+              const path = l.routePath;
+              if (!path || path.length < 4) return;
+              // Sample 3 waypoints from the loop path
+              const pts: [number, number][] = [
+                [path[0].lng, path[0].lat],
+                [path[Math.floor(path.length * 0.33)].lng, path[Math.floor(path.length * 0.33)].lat],
+                [path[Math.floor(path.length * 0.66)].lng, path[Math.floor(path.length * 0.66)].lat],
+                [path[path.length - 1].lng, path[path.length - 1].lat],
+              ];
+              const result = await fetchMapboxWalking(pts);
+              if (result?.steps) {
+                l.surfaceType = classifySurfaceType(result.steps);
+              }
+            } catch {}
+          }));
+
           allResults.push(...loopRoutes);
           console.log(`  ✅ "all" mode: ${loopRoutes.length} loop routes`);
         } catch (err) {
@@ -861,8 +965,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const fullCoords = [...outCoords, ...retCoords];
               const routePath = fullCoords.map(([lng2, lat2]) => ({ lat: lat2, lng: lng2 }));
 
-              // Alternate surface types across out-and-back routes
-              const oabSurface = i === 0 ? 'road' as const : i === 1 ? 'trail' as const : 'mixed' as const;
+              // Classify surface from actual Mapbox step data
+              const allSteps = [...(outbound.steps || []), ...(returnLeg.steps || [])];
+              const detectedSurface = classifySurfaceType(allSteps);
               return {
                 id: 0,
                 name: `Out & Back (${totalDist.toFixed(1)} km • ${totalDur} min)`,
@@ -870,7 +975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 distance: totalDist, estimatedTime: totalDur,
                 elevationGain: Math.round(totalDist * 8),
                 routePath, routeType: 'out_and_back',
-                surfaceType: oabSurface,
+                surfaceType: detectedSurface,
                 sceneryRating: 3, trafficLevel: 2,
                 directions: [
                   { instruction: `Head out from your starting point.`, distance: 0.1, duration: 0.5 },
@@ -905,11 +1010,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const minPOIMins = td <= 10 ? 1 : td <= 20 ? 3 : 10;
               if (mins < minPOIMins || mins > 120) return null;
               const routePath = (route.geometry.coordinates as [number, number][]).map(([lng2, lat2]) => ({ lat: lat2, lng: lng2 }));
+              // Classify surface from actual Mapbox step data
+              const detectedPoiSurface = classifySurfaceType(route.steps || []);
               // Scenic only if destination is a park/green space
               const isGreenSpace = poi.category === 'park' || poi.category === 'water';
               const poiFeatures: string[] = [poi.category];
               if (isGreenSpace) poiFeatures.push('scenic');
-              const poiSurface = isGreenSpace ? 'trail' as const : 'road' as const;
 
               return {
                 id: 0,
@@ -918,7 +1024,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 distance: km, estimatedTime: mins,
                 elevationGain: Math.round(km * 8),
                 routePath, routeType: 'a_to_b',
-                surfaceType: poiSurface,
+                surfaceType: detectedPoiSurface,
                 sceneryRating: isGreenSpace ? 4 : 2,
                 trafficLevel: isGreenSpace ? 1 : 2,
                 directions: [
