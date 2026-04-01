@@ -11,11 +11,15 @@ const config: CapacitorConfig = {
       splashFullScreen: false,
       splashImmersive: false,
     },
+    CapacitorHttp: {
+      // Route all fetch() calls through native HTTP engine.
+      // This bypasses WKWebView's third-party cookie blocking (ITP),
+      // so session cookies work for cross-origin requests to Railway.
+      enabled: true,
+    },
     Geolocation: {
       // iOS requires these keys in Info.plist (set via Xcode or manually)
     },
-    // StatusBar plugin removed — iOS WebView is always edge-to-edge.
-    // Adding StatusBar config can interfere with safe area inset reporting.
   },
   server: {
     allowNavigation: ['runflexrouter-production.up.railway.app'],
