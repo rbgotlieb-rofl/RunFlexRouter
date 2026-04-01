@@ -1,6 +1,7 @@
 #!/bin/bash
 # RunFlex diagnostic script — run on your Mac to verify server health
 # Usage: ./scripts/test-server.sh
+# Automatically waits for Railway to deploy the latest commit before testing.
 
 set -e
 
@@ -8,7 +9,38 @@ API="https://runflexrouter-production.up.railway.app"
 COOKIE_JAR="/tmp/runflex-test-cookies.txt"
 rm -f "$COOKIE_JAR"
 
+# Get the latest local commit SHA
+LOCAL_SHA=$(git rev-parse HEAD | head -c 7)
 echo "=== RunFlex Server Diagnostics ==="
+echo "Local commit: $LOCAL_SHA"
+echo ""
+
+# Wait for Railway to deploy the latest commit
+echo "0. Waiting for Railway to deploy $LOCAL_SHA..."
+MAX_WAIT=180
+WAITED=0
+while [ $WAITED -lt $MAX_WAIT ]; do
+  HEALTH=$(curl -s "$API/api/health" 2>/dev/null || echo '{}')
+  REMOTE_SHA=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','unknown')[:7])" 2>/dev/null || echo "unknown")
+
+  if [ "$REMOTE_SHA" = "$LOCAL_SHA" ]; then
+    echo "   ✅ Railway is running $LOCAL_SHA"
+    break
+  fi
+
+  if [ "$REMOTE_SHA" = "unknown" ]; then
+    printf "   ⏳ Server doesn't report version yet (waited %ds)...\r" $WAITED
+  else
+    printf "   ⏳ Railway running %s, waiting for %s (%ds)...\r" "$REMOTE_SHA" "$LOCAL_SHA" "$WAITED"
+  fi
+  sleep 5
+  WAITED=$((WAITED + 5))
+done
+
+if [ $WAITED -ge $MAX_WAIT ]; then
+  echo ""
+  echo "   ⚠️  Timed out waiting for deploy. Testing against current server anyway."
+fi
 echo ""
 
 # 1. Health check
@@ -25,23 +57,15 @@ fi
 
 # 2. Register/login test user
 echo "2. Registering test user..."
+TEST_USER="test_diag_${RANDOM}@test.com"
 REG=$(curl -s -w "\n%{http_code}" -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
   -X POST "$API/api/register" \
   -H "Content-Type: application/json" \
-  -d '{"username":"test_diag_'$RANDOM'@test.com","password":"testtest123"}' 2>&1)
+  -d "{\"username\":\"${TEST_USER}\",\"password\":\"testtest123\"}" 2>&1)
 HTTP_CODE=$(echo "$REG" | tail -1)
 BODY=$(echo "$REG" | head -1)
 if [ "$HTTP_CODE" = "201" ]; then
   echo "   ✅ Registration works ($BODY)"
-elif [ "$HTTP_CODE" = "409" ]; then
-  echo "   ⚠️  User exists, trying login..."
-  LOGIN=$(curl -s -w "\n%{http_code}" -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
-    -X POST "$API/api/login" \
-    -H "Content-Type: application/json" \
-    -d '{"username":"test_diag@test.com","password":"testtest123"}' 2>&1)
-  HTTP_CODE=$(echo "$LOGIN" | tail -1)
-  BODY=$(echo "$LOGIN" | head -1)
-  echo "   Login: HTTP $HTTP_CODE - $BODY"
 else
   echo "   ❌ Registration failed (HTTP $HTTP_CODE): $BODY"
 fi
@@ -50,12 +74,13 @@ fi
 echo "3. Checking session cookie..."
 if grep -q "connect.sid" "$COOKIE_JAR" 2>/dev/null; then
   COOKIE_LINE=$(grep "connect.sid" "$COOKIE_JAR")
-  echo "   ✅ Cookie set: $(echo $COOKIE_LINE | awk '{print $1, $4, $5, $6}')"
-  # Check SameSite and Secure flags
-  if echo "$COOKIE_LINE" | grep -qi "secure"; then
-    echo "   ✅ Cookie is Secure"
+  echo "   ✅ Cookie set"
+  # Check Secure flag (column 4 in Netscape cookie format)
+  SECURE_FLAG=$(echo "$COOKIE_LINE" | awk '{print $4}')
+  if [ "$SECURE_FLAG" = "TRUE" ]; then
+    echo "   ✅ Cookie is Secure (cross-origin will work)"
   else
-    echo "   ⚠️  Cookie is NOT Secure (cross-origin will fail)"
+    echo "   ❌ Cookie is NOT Secure (cross-origin will fail for Capacitor app)"
   fi
 else
   echo "   ❌ No session cookie set"

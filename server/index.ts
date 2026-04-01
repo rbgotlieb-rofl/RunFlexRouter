@@ -35,8 +35,9 @@ app.use(express.urlencoded({ extended: false }));
 // Auth: sessions + passport
 setupAuth(app);
 
-// Health check so we can confirm the app is reachable
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+// Health check + version (GIT_SHA set at build time, or from env)
+const GIT_SHA = process.env.GIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || "unknown";
+app.get("/api/health", (_req, res) => res.json({ ok: true, version: GIT_SHA }));
 
 // Simple API logger (kept from your version)
 app.use((req, res, next) => {
