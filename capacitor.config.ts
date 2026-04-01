@@ -16,11 +16,8 @@ const config: CapacitorConfig = {
     },
   },
   server: {
-    // Load the app from Railway directly instead of bundled files.
-    // This makes ALL requests same-origin, so cookies work without
-    // any cross-origin/ITP issues. The app needs internet anyway
-    // (routes, maps, auth), so this has no practical downside.
-    url: 'https://runflexrouter-production.up.railway.app',
+    // App loads from bundled files (enables native plugins like GPS).
+    // Auth uses token-based Authorization header instead of cookies.
     allowNavigation: ['runflexrouter-production.up.railway.app'],
   },
   ios: {

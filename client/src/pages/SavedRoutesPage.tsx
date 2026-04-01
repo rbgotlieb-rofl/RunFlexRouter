@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Route } from "@shared/schema";
-import { API_BASE } from "@/lib/api";
+import { authFetch } from "@/lib/api";
 import MainLayout from "@/components/layouts/MainLayout";
 import RouteDetailSheet from "@/components/routes/RouteDetailSheet";
 import { Heart, MapPin, Loader2, Trash2 } from "lucide-react";
@@ -15,9 +15,7 @@ export default function SavedRoutesPage() {
   const { data: savedRoutes = [], isLoading, refetch } = useQuery<Route[]>({
     queryKey: ["saved-routes"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/saved`, {
-        credentials: "include",
-      });
+      const res = await authFetch("/api/saved");
       if (!res.ok) throw new Error("Failed to fetch saved routes");
       return res.json();
     },
@@ -28,10 +26,7 @@ export default function SavedRoutesPage() {
   const handleDeleteRoute = async (routeId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`${API_BASE}/api/saved/${routeId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const res = await authFetch(`/api/saved/${routeId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete route");
       toast({ title: "Route removed", description: "Route has been removed from your saved routes." });
       refetch();

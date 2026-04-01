@@ -7,7 +7,7 @@ import RouteDirections from "./RouteDirections";
 import RouteMapPreview from "../map/RouteMapPreview";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { API_BASE } from "@/lib/api";
+import { authFetch } from "@/lib/api";
 interface RouteDetailSheetProps {
   route: Route;
   isOpen: boolean;
@@ -36,10 +36,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
     try {
       if (isSaved && savedId) {
         // Unsave
-        const res = await fetch(`${API_BASE}/api/saved/${savedId}`, {
-          method: "DELETE",
-          credentials: "include",
-        });
+        const res = await authFetch(`/api/saved/${savedId}`, { method: "DELETE" });
         if (!res.ok) throw new Error("Failed to remove route");
         setIsSaved(false);
         setSavedId(null);
@@ -47,10 +44,9 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
         toast({ title: "Route removed", description: "Removed from your Saved tab." });
       } else {
         // Save
-        const res = await fetch(`${API_BASE}/api/saved`, {
+        const res = await authFetch("/api/saved", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify(route),
         });
         if (!res.ok) {

@@ -82,6 +82,27 @@ export function setupAuth(app: Express): void {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Token-based auth: if request has Authorization: Bearer <sessionId>,
+  // load that session. This lets Capacitor native apps (which can't use
+  // cross-origin cookies) authenticate by storing the session ID locally.
+  app.use((req: any, res, next) => {
+    if (req.isAuthenticated()) return next(); // Already has cookie session
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) return next();
+    const sid = authHeader.slice(7);
+    if (!sid) return next();
+    store.get(sid, (err: any, session: any) => {
+      if (err || !session) return next();
+      // Attach session data and deserialize user
+      const userId = session?.passport?.user;
+      if (!userId) return next();
+      storage.getUser(userId).then((user) => {
+        if (user) (req as any).user = user;
+        next();
+      }).catch(() => next());
+    });
+  });
+
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
@@ -133,6 +154,7 @@ export function setupAuth(app: Express): void {
         return res.status(201).json({
           id: user.id,
           username: user.username,
+          token: req.sessionID,
         });
       });
     } catch (err) {
@@ -146,7 +168,7 @@ export function setupAuth(app: Express): void {
       if (!user) return res.status(401).json({ message: info?.message || "Login failed" });
       req.login(user, (err) => {
         if (err) return next(err);
-        return res.json({ id: user.id, username: user.username });
+        return res.json({ id: user.id, username: user.username, token: req.sessionID });
       });
     })(req, res, next);
   });
@@ -158,8 +180,9 @@ export function setupAuth(app: Express): void {
     });
   });
 
-  app.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) {
+  app.get("/api/user", (req: any, res) => {
+    // Check both cookie-based and token-based auth
+    if (!req.isAuthenticated() && !req.user) {
       return res.status(401).json({ message: "Not authenticated" });
     }
     const user = req.user!;

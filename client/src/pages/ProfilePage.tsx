@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
-import { API_BASE } from "@/lib/api";
+import { authFetch } from "@/lib/api";
 import MainLayout from "@/components/layouts/MainLayout";
 import { Button } from "@/components/ui/button";
 import { User, MapPin, Calendar, LogOut, Loader2 } from "lucide-react";
@@ -12,9 +12,7 @@ export default function ProfilePage() {
   const { data: savedRoutes = [], isLoading } = useQuery<Route[]>({
     queryKey: ["saved-routes"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/saved`, {
-        credentials: "include",
-      });
+      const res = await authFetch("/api/saved");
       if (!res.ok) throw new Error("Failed to fetch saved routes");
       return res.json();
     },

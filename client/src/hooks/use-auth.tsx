@@ -14,10 +14,30 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const TOKEN_KEY = "runflex_auth_token";
+
+function getToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+
+function setToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
 async function fetchJson(url: string, opts?: RequestInit) {
   const res = await fetch(`${API_BASE}${url}`, {
     ...opts,
-    headers: { "Content-Type": "application/json", ...opts?.headers },
+    headers: { ...authHeaders(), ...opts?.headers },
     credentials: "include",
   });
   if (!res.ok) {
@@ -39,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null;
       }
     },
-    staleTime: 5 * 60 * 1000, // Re-check auth every 5 minutes
+    staleTime: 5 * 60 * 1000,
     retry: false,
   });
 
@@ -51,7 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(["auth-user"], data);
+      if (data.token) setToken(data.token);
+      queryClient.setQueryData(["auth-user"], { id: data.id, username: data.username });
     },
   });
 
@@ -63,7 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(["auth-user"], data);
+      if (data.token) setToken(data.token);
+      queryClient.setQueryData(["auth-user"], { id: data.id, username: data.username });
     },
   });
 
@@ -72,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return fetchJson("/api/logout", { method: "POST" });
     },
     onSuccess: () => {
+      setToken(null);
       queryClient.setQueryData(["auth-user"], null);
     },
   });
