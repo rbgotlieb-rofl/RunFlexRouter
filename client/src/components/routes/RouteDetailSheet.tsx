@@ -373,12 +373,14 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
     
       {/* Mobile version uses a custom full-screen sheet */}
       <div
-        className={`md:hidden fixed top-0 left-0 right-0 bottom-0 z-30 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`md:hidden fixed top-0 left-0 right-0 bottom-0 z-30 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
       >
         <div className="absolute top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50" onClick={onClose}></div>
-        <div className="absolute top-0 left-0 right-0 bottom-0 bg-white overflow-y-auto overflow-x-hidden">
-          {/* Back button header — below Dynamic Island */}
-          <div className="sticky top-0 z-20 bg-primary px-4 pb-3 flex items-center" style={{ paddingTop: '59px' }}>
+        <div className="absolute top-0 left-0 right-0 bottom-0 bg-white overflow-y-auto">
+          {/* Spacer for status bar / Dynamic Island */}
+          <div style={{ height: '59px', background: '#1a1a2e', flexShrink: 0 }}></div>
+          {/* Back button header */}
+          <div className="bg-primary px-4 py-3 flex items-center">
             <button
               onClick={onClose}
               className="flex items-center gap-2 text-white font-medium text-sm"
@@ -387,7 +389,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
               Back to Routes
             </button>
           </div>
-          {/* Portrait view map at the top */}
+          {/* Portrait view map */}
           <div className="relative w-full h-[240px]">
             <RouteMapPreview route={route} height={240} detailMode={true} userLocation={userLocation} />
             <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-sm">
