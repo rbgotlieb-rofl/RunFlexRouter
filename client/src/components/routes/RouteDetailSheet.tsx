@@ -373,12 +373,12 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
     
       {/* Mobile version uses a custom full-screen sheet */}
       <div
-        className={`md:hidden fixed inset-0 z-30 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`md:hidden fixed top-0 left-0 right-0 bottom-0 z-30 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}
       >
-        <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose}></div>
-        <div className="absolute inset-0 bg-white overflow-y-auto">
+        <div className="absolute top-0 left-0 right-0 bottom-0 bg-black bg-opacity-50" onClick={onClose}></div>
+        <div className="absolute top-0 left-0 right-0 bottom-0 bg-white overflow-y-auto overflow-x-hidden">
           {/* Back button header — below Dynamic Island */}
-          <div className="sticky top-0 z-20 bg-primary px-4 py-3 pt-[59px] flex items-center">
+          <div className="sticky top-0 z-20 bg-primary px-4 pb-3 flex items-center" style={{ paddingTop: '59px' }}>
             <button
               onClick={onClose}
               className="flex items-center gap-2 text-white font-medium text-sm"
