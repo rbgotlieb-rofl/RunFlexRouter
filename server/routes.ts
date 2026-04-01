@@ -247,6 +247,46 @@ async function resolveStartPoint(req: any): Promise<{ lat: number; lng: number }
   return null;
 }
 
+/**
+ * Check if a route passes through or near green areas (parks, woods, gardens).
+ * Samples 3 points along the route and checks for nearby green POIs via Mapbox.
+ */
+async function routePassesThroughGreenArea(
+  routePath: { lat: number; lng: number }[]
+): Promise<boolean> {
+  if (routePath.length < 4) return false;
+  const token = process.env.MAPBOX_ACCESS_TOKEN;
+  if (!token) return false;
+
+  const samplePoints = [
+    routePath[Math.floor(routePath.length * 0.25)],
+    routePath[Math.floor(routePath.length * 0.5)],
+    routePath[Math.floor(routePath.length * 0.75)],
+  ];
+
+  for (const pt of samplePoints) {
+    try {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/park.json?proximity=${pt.lng},${pt.lat}&types=poi&limit=1&access_token=${token}`;
+      const resp = await fetch(url);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (data.features?.length > 0) {
+        const poi = data.features[0];
+        const poiLat = poi.center[1];
+        const poiLng = poi.center[0];
+        // Check if the park is within ~500m of the route point
+        const dLat = (poiLat - pt.lat) * 111;
+        const dLng = (poiLng - pt.lng) * 111 * Math.cos(pt.lat * Math.PI / 180);
+        const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
+        if (distKm < 0.5) return true;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
 function filterValidRoutes(routes: any[], targetKm: number, targetType?: string, targetDurationMin?: number, surfaceType?: string, requiredFeatures?: string[]): any[] {
   const minDistanceKm = 0.2;
   const minRatioOfTarget = 0.3;
@@ -560,8 +600,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               sceneryRating: 3,
               trafficLevel: 2,
               directions: directions,
-              surfaceType: 'road' as const,
-              features: ['loop', 'scenic'],
+              surfaceType: idx % 2 === 0 ? 'road' as const : 'trail' as const,
+              features: ['loop'],
               _isCleanLoop: isCleanLoop,
               _loopScore: score,
             };
@@ -619,8 +659,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 elevationGain: Math.round(km * 8),
                 routePath, routeType: 'loop' as const,
                 sceneryRating: 3, trafficLevel: 2, directions,
-                surfaceType: 'road' as const,
-              features: ['loop', 'scenic'],
+                surfaceType: idx % 2 === 0 ? 'road' as const : 'trail' as const,
+              features: ['loop'],
                 _isCleanLoop: isClean,
                 _loopScore: score,
               };
@@ -725,7 +765,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const td = effectiveTargetDuration || 30;
 
-        // --- 1) LOOP ROUTES (30-40%): 4 loops adapted to target duration ---
+        // --- 1) LOOP ROUTES: 4 loops adapted to target duration ---
+        // Alternate surface types: even indices = road, odd = trail/mixed
         try {
           const loopDurations = td <= 10
             ? [td * 0.8, td, td * 1.2, td * 1.5].map(Math.round)
@@ -760,13 +801,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               distance: km, estimatedTime: mins,
               elevationGain: Math.round(km * 8),
               routePath, routeType: 'loop',
+              surfaceType: idx % 2 === 0 ? 'road' as const : 'trail' as const,
               sceneryRating: 3, trafficLevel: 2,
               directions: [
                 { instruction: `Start your ${km.toFixed(1)}km loop.`, distance: 0.1, duration: 0.5 },
                 { instruction: `Continue to the halfway point.`, distance: km / 2, duration: mins / 2 },
                 { instruction: `Complete the loop back to start.`, distance: km, duration: mins },
               ],
-              features: ['loop', 'scenic'] as string[],
+              features: ['loop'] as string[],
               _loopScore: score, _isClean: isClean,
             };
           });
@@ -819,6 +861,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const fullCoords = [...outCoords, ...retCoords];
               const routePath = fullCoords.map(([lng2, lat2]) => ({ lat: lat2, lng: lng2 }));
 
+              // Alternate surface types across out-and-back routes
+              const oabSurface = i === 0 ? 'road' as const : i === 1 ? 'trail' as const : 'mixed' as const;
               return {
                 id: 0,
                 name: `Out & Back (${totalDist.toFixed(1)} km • ${totalDur} min)`,
@@ -826,6 +870,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 distance: totalDist, estimatedTime: totalDur,
                 elevationGain: Math.round(totalDist * 8),
                 routePath, routeType: 'out_and_back',
+                surfaceType: oabSurface,
                 sceneryRating: 3, trafficLevel: 2,
                 directions: [
                   { instruction: `Head out from your starting point.`, distance: 0.1, duration: 0.5 },
@@ -860,7 +905,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const minPOIMins = td <= 10 ? 1 : td <= 20 ? 3 : 10;
               if (mins < minPOIMins || mins > 120) return null;
               const routePath = (route.geometry.coordinates as [number, number][]).map(([lng2, lat2]) => ({ lat: lat2, lng: lng2 }));
-              const categoryLabel = poi.category === 'park' ? '🌳' : poi.category === 'water' ? '💧' : '🏛️';
+              // Scenic only if destination is a park/green space
+              const isGreenSpace = poi.category === 'park' || poi.category === 'water';
+              const poiFeatures: string[] = [poi.category];
+              if (isGreenSpace) poiFeatures.push('scenic');
+              const poiSurface = isGreenSpace ? 'trail' as const : 'road' as const;
+
               return {
                 id: 0,
                 name: `Run to ${poi.name} (${km.toFixed(1)} km • ${mins} min)`,
@@ -868,14 +918,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 distance: km, estimatedTime: mins,
                 elevationGain: Math.round(km * 8),
                 routePath, routeType: 'a_to_b',
-                sceneryRating: poi.category === 'park' ? 4 : 3,
-                trafficLevel: 2,
+                surfaceType: poiSurface,
+                sceneryRating: isGreenSpace ? 4 : 2,
+                trafficLevel: isGreenSpace ? 1 : 2,
                 directions: [
                   { instruction: `Head towards ${poi.name}.`, distance: 0.1, duration: 0.5 },
                   { instruction: `Continue along the route to ${poi.name}.`, distance: km / 2, duration: mins / 2 },
                   { instruction: `Arrive at ${poi.name}. ${km.toFixed(1)}km total.`, distance: km, duration: mins },
                 ],
-                features: [poi.category, 'scenic'] as string[],
+                features: poiFeatures,
                 _poiCategory: poi.category,
               };
             })
@@ -914,8 +965,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const allTargetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? (effectiveTargetDuration / 60) * 5 : 5);
         // In "all" mode, skip duration/distance filtering — show the full variety of route types
         const validAllResults = filterValidRoutes(allResults, 0.2, undefined, undefined, surfaceType, requiredFeatures);
-        validAllResults.forEach((r, i) => { r.id = i + 1; });
-        console.log(`✅ "all" mode total: ${validAllResults.length} routes returned (${allResults.length} before filtering)`);
+
+        // Enrich routes: check if each route passes through green areas for 'scenic' tag
+        await Promise.all(validAllResults.map(async (r: any) => {
+          if (r.features && r.features.includes('scenic')) return; // Already tagged
+          if (r.routePath && Array.isArray(r.routePath)) {
+            const isScenic = await routePassesThroughGreenArea(r.routePath);
+            if (isScenic) {
+              r.features = [...(r.features || []), 'scenic'];
+              r.sceneryRating = Math.max(r.sceneryRating || 0, 4);
+            }
+          }
+        }));
+
+        // Guarantee all route types: check we have at least 1 of each category
+        const hasLoop = validAllResults.some((r: any) => r.routeType === 'loop');
+        const hasOAB = validAllResults.some((r: any) => r.routeType === 'out_and_back');
+        const hasAtoB = validAllResults.some((r: any) => r.routeType === 'a_to_b');
+        if (!hasLoop) console.log(`  ⚠️ "all" mode: no loop routes generated`);
+        if (!hasOAB) console.log(`  ⚠️ "all" mode: no out-and-back routes generated`);
+        if (!hasAtoB) console.log(`  ⚠️ "all" mode: no A-to-B routes generated`);
+
+        validAllResults.forEach((r: any, i: number) => { r.id = i + 1; });
+        console.log(`✅ "all" mode total: ${validAllResults.length} routes (loop=${hasLoop}, oab=${hasOAB}, atob=${hasAtoB})`);
         return res.json(validAllResults);
       }
 
