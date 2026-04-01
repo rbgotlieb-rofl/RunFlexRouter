@@ -97,20 +97,18 @@ export default function LocationAutocomplete({
 
       const accM = Math.round(pos.accuracy);
       let description: string;
-      if (accM <= 50) {
-        description = `Using your current location. High accuracy (\u00b1${accM}m).`;
-      } else if (accM <= 500) {
-        description = `Using your current location. Good accuracy (\u00b1${accM}m).`;
-      } else if (accM <= 5000) {
-        description = `Using your approximate location (\u00b1${(accM / 1000).toFixed(1)}km). For better accuracy, try on a phone with GPS enabled.`;
+      if (accM <= 100) {
+        description = `High accuracy (\u00b1${accM}m).`;
+      } else if (accM <= 2000) {
+        description = `Good accuracy (\u00b1${accM < 1000 ? `${accM}m` : `${(accM / 1000).toFixed(1)}km`}).`;
       } else {
-        description = `Using your approximate location (\u00b1${(accM / 1000).toFixed(0)}km). Your browser is using IP-based location. For precise results, use a phone with GPS or enter a postcode.`;
+        description = `Approximate location (\u00b1${(accM / 1000).toFixed(0)}km). Enter a postcode for more precise results.`;
       }
 
       toast({
         title: "Location detected",
         description,
-        duration: accM > 5000 ? 8000 : 5000,
+        duration: 3000,
       });
 
       try {
