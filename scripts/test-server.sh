@@ -136,6 +136,47 @@ else
   echo "   ❌ Route generation failed (HTTP $HTTP_CODE): $(echo $BODY | head -c 200)"
 fi
 
+# 8. Check Mapbox config
+echo "8. Checking Mapbox config..."
+MAPBOX=$(curl -s -w "\n%{http_code}" -b "$COOKIE_JAR" "$API/api/config" 2>&1)
+HTTP_CODE=$(echo "$MAPBOX" | tail -1)
+BODY=$(echo "$MAPBOX" | head -1)
+if [ "$HTTP_CODE" = "200" ]; then
+  HAS_TOKEN=$(echo "$BODY" | python3 -c "import sys,json; t=json.load(sys.stdin).get('mapboxToken',''); print('yes' if len(t)>10 else 'no')" 2>/dev/null || echo "?")
+  if [ "$HAS_TOKEN" = "yes" ]; then
+    echo "   ✅ Mapbox token configured"
+  else
+    echo "   ❌ Mapbox token missing or too short"
+  fi
+else
+  echo "   ❌ Config endpoint failed (HTTP $HTTP_CODE)"
+fi
+
+# 9. Check Mapbox tiles are reachable
+echo "9. Checking Mapbox tile server..."
+TILE_CHECK=$(curl -s -o /dev/null -w "%{http_code}" "https://api.mapbox.com/v4/mapbox.mapbox-streets-v8.json" 2>&1)
+if [ "$TILE_CHECK" = "200" ] || [ "$TILE_CHECK" = "401" ]; then
+  echo "   ✅ Mapbox API reachable"
+else
+  echo "   ❌ Mapbox API unreachable (HTTP $TILE_CHECK)"
+fi
+
+# 10. Verify Capacitor config
+echo "10. Checking Capacitor config..."
+CAP_CONFIG="capacitor.config.ts"
+if [ -f "$CAP_CONFIG" ]; then
+  if grep -q "CapacitorHttp" "$CAP_CONFIG"; then
+    echo "   ⚠️  CapacitorHttp is enabled (may intercept map tile requests)"
+  else
+    echo "   ✅ No CapacitorHttp (map tiles load normally)"
+  fi
+  if grep -q 'server.url\|url:' "$CAP_CONFIG" | grep -q "railway"; then
+    echo "   ✅ App loads from Railway (same-origin auth)"
+  fi
+else
+  echo "   ⚠️  No capacitor.config.ts found"
+fi
+
 echo ""
 echo "=== Done ==="
 rm -f "$COOKIE_JAR"
