@@ -2,7 +2,7 @@ import React from "react";
 import Sidebar from "@/components/sidebar/Sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/hooks/use-auth";
-import { Home, Heart, User, Settings } from "lucide-react";
+import { Home, Heart, User } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 interface MainLayoutProps {
@@ -21,18 +21,15 @@ export default function MainLayout({ children }: MainLayoutProps) {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 59px)' }}>
-      {/* Sidebar for desktop */}
+    <div className="flex flex-col md:flex-row h-screen safe-top">
       {!isMobile && <Sidebar />}
 
-      {/* Main content \u2014 add bottom padding on mobile to avoid bottom nav overlap */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden pb-safe">
+      <main className="flex-1 flex flex-col h-full overflow-hidden safe-bottom">
         {children}
       </main>
 
-      {/* Mobile bottom navigation \u2014 safe area aware */}
       {isMobile && (
-        <nav className="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 z-20 pb-safe">
+        <nav className="bg-white border-t border-gray-200 fixed bottom-0 left-0 right-0 z-20 safe-bottom">
           <div className="flex justify-around items-center h-14">
             {navItems.map((item) => {
               const isActive = location === item.href;

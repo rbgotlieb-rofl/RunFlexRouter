@@ -953,25 +953,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- Saved routes (using /api/saved/* to avoid conflict with /api/routes/:id) ---
 
-  // Debug endpoint
-  app.get("/api/debug/saved", async (req, res) => {
-    try {
-      const isAuth = req.isAuthenticated();
-      const userId = isAuth ? req.user!.id : null;
-      const userRoutes = isAuth ? await storage.getRoutesByUserId(req.user!.id) : [];
-      const allRoutes = await storage.getRoutes();
-      res.json({
-        authenticated: isAuth,
-        userId,
-        userRoutesCount: userRoutes.length,
-        allRoutesCount: allRoutes.length,
-        allRouteUserIds: allRoutes.map((r: any) => ({ id: r.id, userId: r.userId, name: r.name?.substring(0, 30) })),
-      });
-    } catch (error: any) {
-      res.json({ error: error.message });
-    }
-  });
-
   app.post("/api/saved", async (req, res) => {
     try {
       if (!req.isAuthenticated()) {

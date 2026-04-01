@@ -25,6 +25,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
   const [activePlaylist, setActivePlaylist] = useState<'spotify' | 'apple' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [savedId, setSavedId] = useState<number | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -33,21 +34,38 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
   }, []);
 
   const handleSaveRoute = async () => {
+    if (isSaving) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/api/saved`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(route),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || "Failed to save route");
+      if (isSaved && savedId) {
+        // Unsave
+        const res = await fetch(`${API_BASE}/api/saved/${savedId}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error("Failed to remove route");
+        setIsSaved(false);
+        setSavedId(null);
+        queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+        toast({ title: "Route removed", description: "Removed from your Saved tab." });
+      } else {
+        // Save
+        const res = await fetch(`${API_BASE}/api/saved`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(route),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || "Failed to save route");
+        }
+        const saved = await res.json();
+        setIsSaved(true);
+        setSavedId(saved.id);
+        queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+        toast({ title: "Route saved!", description: "You can find it in your Saved tab." });
       }
-      setIsSaved(true);
-      queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
-      toast({ title: "Route saved!", description: "You can find it in your Saved tab." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -339,7 +357,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
               
                 {/* Secondary actions */}
                 <div className="flex gap-3 mb-4">
-                  <Button variant="outline" className="flex-1" onClick={handleSaveRoute} disabled={isSaving || isSaved}>
+                  <Button variant="outline" className="flex-1" onClick={handleSaveRoute} disabled={isSaving}>
                     {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Heart className={`h-4 w-4 mr-2 ${isSaved ? "fill-red-500 text-red-500" : ""}`} />}
                     {isSaved ? "Saved" : "Save"}
                   </Button>
@@ -557,7 +575,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
             
             {/* Secondary actions */}
             <div className="flex gap-3 mb-4">
-              <Button variant="outline" className="flex-1" onClick={handleSaveRoute} disabled={isSaving || isSaved}>
+              <Button variant="outline" className="flex-1" onClick={handleSaveRoute} disabled={isSaving}>
                 {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Heart className={`h-4 w-4 mr-2 ${isSaved ? "fill-red-500 text-red-500" : ""}`} />}
                 {isSaved ? "Saved" : "Save"}
               </Button>

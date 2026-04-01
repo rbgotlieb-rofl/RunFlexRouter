@@ -26,24 +26,28 @@
   min-height: 140px;
 }
 
-/* Safe area: top is handled by StatusBar.setOverlaysWebView(false)
-   which keeps the WebView below the status bar. Only bottom needs CSS. */
-.pt-safe {
-  /* No-op on native (status bar doesn't overlay).
-     On web, env() provides the value if available. */
-  padding-top: env(safe-area-inset-top, 0px);
+/* ======= Safe area handling =======
+   On iOS Capacitor, CSS env(safe-area-inset-*) returns 0.
+   Instead, use fixed values that match iPhone safe areas.
+   These only apply on mobile-width screens (phones).
+   Desktop browsers get 0 padding. */
+
+.safe-top {
+  padding-top: 0;
 }
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-.mb-safe {
-  margin-bottom: env(safe-area-inset-bottom, 0px);
+.safe-bottom {
+  padding-bottom: 0;
 }
 
-/* On mobile with bottom nav, add space so content isn't hidden */
 @media (max-width: 767px) {
+  .safe-top {
+    padding-top: 59px;
+  }
+  .safe-bottom {
+    padding-bottom: 34px;
+  }
   main {
-    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(3.5rem + 34px);
   }
 }
 
