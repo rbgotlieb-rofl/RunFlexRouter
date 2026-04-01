@@ -10,7 +10,7 @@ export interface LocationSuggestion {
  * Search for locations globally using Mapbox Geocoding API.
  * No longer hardcoded to London -- works anywhere in the world.
  */
-export async function searchLocations(query: string, proximity?: string): Promise<LocationSuggestion[]> {
+export async function searchLocations(query: string, proximity?: string, country?: string): Promise<LocationSuggestion[]> {
   if (!query || query.trim() === '') {
     return [];
   }
@@ -29,9 +29,12 @@ export async function searchLocations(query: string, proximity?: string): Promis
       limit: '8',
     });
 
-    // If the user has a location, bias results towards it and restrict to
-    // a reasonable area (~100 km bounding box) so results from other
-    // countries/continents don't appear.
+    // Restrict to a specific country if provided
+    if (country) {
+      params.set('country', country);
+    }
+
+    // If the user has a location, bias results towards it
     if (proximity) {
       params.set('proximity', proximity);
       const [lngStr, latStr] = proximity.split(',');

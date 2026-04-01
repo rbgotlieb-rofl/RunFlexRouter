@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapPin, Navigation, Crosshair, Loader2 } from 'lucide-react';
+import { MapPin, Navigation, Crosshair, Loader2, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { API_BASE } from '@/lib/api';
@@ -45,6 +45,8 @@ export default function LocationAutocomplete({
       if (latestPosition) {
         params.set('proximity', `${latestPosition.lng},${latestPosition.lat}`);
       }
+      // Always restrict to Great Britain to prevent results from other countries
+      params.set('country', 'gb');
       const response = await fetch(`${API_BASE}/api/locations?${params}`);
       if (!response.ok) {
         throw new Error('Network response was not ok');
@@ -221,11 +223,10 @@ export default function LocationAutocomplete({
           onChange={handleInputChange}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          className={`w-full py-2 pl-3 text-base border rounded-lg focus:border-primary focus:outline-none ${
-            showLocationOption ? 'pr-10' : 'pr-4'
-          } ${showCurrentLocationLabel ? 'placeholder:text-blue-600 placeholder:font-medium' : ''}`}
+          className={`w-full py-2 pl-3 pr-10 text-base border rounded-lg focus:border-primary focus:outline-none ${
+            showCurrentLocationLabel ? 'placeholder:text-blue-600 placeholder:font-medium' : ''}`}
         />
-        {showLocationOption && (
+        {showLocationOption ? (
           <button
             type="button"
             onClick={handleUseMyLocation}
@@ -244,6 +245,19 @@ export default function LocationAutocomplete({
             ) : (
               <Crosshair size={16} />
             )}
+          </button>
+        ) : inputValue && (
+          <button
+            type="button"
+            onClick={() => {
+              setInputValue('');
+              onChange('');
+              setIsOpen(false);
+            }}
+            className="absolute right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 transition-colors"
+            title="Clear"
+          >
+            <X size={16} />
           </button>
         )}
       </div>

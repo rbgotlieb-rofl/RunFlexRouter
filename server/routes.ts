@@ -1121,7 +1121,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const query = (req.query.q as string) || "";
       const proximity = req.query.proximity as string | undefined;
-      const locations = await searchLocations(query, proximity);
+      const country = req.query.country as string | undefined;
+      const locations = await searchLocations(query, proximity, country);
       res.json(locations);
     } catch (error) {
       console.error("Error fetching locations:", error);
