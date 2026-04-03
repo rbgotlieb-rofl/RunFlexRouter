@@ -5,7 +5,8 @@
  */
 import { neon } from "@neondatabase/serverless";
 import { readFileSync, readdirSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 async function main() {
   const url = process.env.DATABASE_URL;
@@ -15,9 +16,8 @@ async function main() {
   }
 
   const sql = neon(url);
-  // When bundled to dist/, migrations is at ../migrations relative to dist/
-  // When run via tsx from scripts/, migrations is at ../migrations relative to scripts/
-  const migrationsDir = join(import.meta.dirname, "..", "migrations");
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const migrationsDir = join(__dirname, "..", "migrations");
   const files = readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql"))
     .sort();
