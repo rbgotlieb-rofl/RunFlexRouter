@@ -217,7 +217,13 @@ export function setupAuth(app: Express): void {
       const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
       const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
-      await sendPasswordResetEmail(username, resetUrl);
+      try {
+        await sendPasswordResetEmail(username, resetUrl);
+      } catch (emailErr: any) {
+        // Log the email error but don't block the response —
+        // the token is already saved and the link was logged to console.
+        console.error("Failed to send password reset email:", emailErr?.message || emailErr);
+      }
 
       return res.json({ message: "If an account with that email exists, a password reset link has been generated." });
     } catch (err: any) {
