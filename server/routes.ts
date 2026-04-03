@@ -1391,7 +1391,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(saved);
     } catch (error) {
       console.error("Error saving route:", error);
-      res.status(500).json({ message: "Error saving route" });
+      res.status(500).json({ message: "Error saving route", detail: (error as any)?.message || String(error) });
     }
   });
 
