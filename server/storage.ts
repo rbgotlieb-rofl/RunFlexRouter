@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import {
   users,
   savedRoutes,
@@ -150,6 +150,24 @@ export class DatabaseStorage implements IStorage {
 
   constructor(db: NonNullable<ReturnType<typeof getDb>>) {
     this.db = db;
+    this.ensurePasswordResetTable();
+  }
+
+  private async ensurePasswordResetTable() {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          token VARCHAR(255) NOT NULL UNIQUE,
+          expires_at TIMESTAMP NOT NULL,
+          used_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+    } catch (err) {
+      console.error("Failed to ensure password_reset_tokens table:", err);
+    }
   }
 
   async getUser(id: number) {
