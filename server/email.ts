@@ -1,24 +1,22 @@
 import { Resend } from "resend";
 
-const resend = process.env.RESEND_API_KEY
-  ? new Resend(process.env.RESEND_API_KEY)
-  : null;
-
-const FROM_ADDRESS = process.env.EMAIL_FROM || "RunFlex <noreply@runflex.app>";
-
 export async function sendPasswordResetEmail(
   to: string,
   resetUrl: string
 ): Promise<void> {
-  if (!resend) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
     console.log(
       `[Email] RESEND_API_KEY not set — skipping email. Reset URL: ${resetUrl}`
     );
     return;
   }
 
+  const fromAddress = process.env.EMAIL_FROM || "RunFlex <noreply@runflex.app>";
+  const resend = new Resend(apiKey);
+
   await resend.emails.send({
-    from: FROM_ADDRESS,
+    from: fromAddress,
     to,
     subject: "Reset your RunFlex password",
     html: `
