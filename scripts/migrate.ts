@@ -15,6 +15,8 @@ async function main() {
   }
 
   const sql = neon(url);
+  // When bundled to dist/, migrations is at ../migrations relative to dist/
+  // When run via tsx from scripts/, migrations is at ../migrations relative to scripts/
   const migrationsDir = join(import.meta.dirname, "..", "migrations");
   const files = readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql"))
