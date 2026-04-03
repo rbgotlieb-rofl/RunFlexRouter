@@ -4,10 +4,6 @@ export async function sendPasswordResetEmail(
   to: string,
   resetUrl: string
 ): Promise<void> {
-  // Debug: log which email-related env vars are available
-  console.log(`[Email Debug] RESEND_API_KEY present: ${!!process.env.RESEND_API_KEY}, EMAIL_FROM present: ${!!process.env.EMAIL_FROM}, APP_URL present: ${!!process.env.APP_URL}`);
-  console.log(`[Email Debug] All env keys: ${Object.keys(process.env).filter(k => k.includes('RESEND') || k.includes('EMAIL')).join(', ') || '(none matching)'}`);
-
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.log(
