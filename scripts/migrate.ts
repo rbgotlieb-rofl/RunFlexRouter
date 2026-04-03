@@ -11,8 +11,8 @@ import { fileURLToPath } from "url";
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    console.error("DATABASE_URL is required");
-    process.exit(1);
+    console.log("DATABASE_URL not set — skipping migrations");
+    return;
   }
 
   const sql = neon(url);
@@ -35,6 +35,5 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Migration failed:", err);
-  process.exit(1);
+  console.error("Migration failed (server will start anyway):", err);
 });
