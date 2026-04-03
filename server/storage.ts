@@ -3,10 +3,12 @@ import {
   users,
   savedRoutes,
   preferences,
+  passwordResetTokens,
   type User,
   type InsertUser,
   type Route,
   type RoutePreferences,
+  type PasswordResetToken,
 } from "@shared/schema";
 import { getDb } from "./db";
 
@@ -26,6 +28,11 @@ export interface IStorage {
 
   savePreferences(prefs: Partial<RoutePreferences>): Promise<RoutePreferences>;
   getPreferences(userId?: number): Promise<RoutePreferences | undefined>;
+
+  createPasswordResetToken(userId: number, token: string, expiresAt: Date): Promise<PasswordResetToken>;
+  getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
+  markPasswordResetTokenUsed(token: string): Promise<void>;
+  updateUserPassword(userId: number, hashedPassword: string): Promise<void>;
 }
 
 // -- In-memory fallback -----------------------------------------------------
@@ -34,8 +41,10 @@ export class MemStorage implements IStorage {
   private users: Map<number, User> = new Map();
   private routes: Map<number, Route> = new Map();
   private preferences: Map<number, RoutePreferences> = new Map();
+  private resetTokens: Map<string, PasswordResetToken> = new Map();
   private routeId = 1;
   private preferenceId = 1;
+  private resetTokenId = 1;
   currentId = 1;
 
   async getUser(id: number) {
@@ -106,6 +115,31 @@ export class MemStorage implements IStorage {
 
   async getPreferences() {
     return this.preferences.get(1);
+  }
+
+  async createPasswordResetToken(userId: number, token: string, expiresAt: Date): Promise<PasswordResetToken> {
+    const id = this.resetTokenId++;
+    const entry: PasswordResetToken = { id, userId, token, expiresAt, usedAt: null, createdAt: new Date() };
+    this.resetTokens.set(token, entry);
+    return entry;
+  }
+
+  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    return this.resetTokens.get(token);
+  }
+
+  async markPasswordResetTokenUsed(token: string): Promise<void> {
+    const entry = this.resetTokens.get(token);
+    if (entry) {
+      entry.usedAt = new Date();
+    }
+  }
+
+  async updateUserPassword(userId: number, hashedPassword: string): Promise<void> {
+    const user = this.users.get(userId);
+    if (user) {
+      user.password = hashedPassword;
+    }
   }
 }
 
@@ -240,6 +274,36 @@ export class DatabaseStorage implements IStorage {
   async getPreferences(): Promise<RoutePreferences | undefined> {
     const rows = await this.db.select().from(preferences).limit(1);
     return rows[0] ? this.mapPrefs(rows[0]) : undefined;
+  }
+
+  async createPasswordResetToken(userId: number, token: string, expiresAt: Date): Promise<PasswordResetToken> {
+    const rows = await this.db
+      .insert(passwordResetTokens)
+      .values({ userId, token, expiresAt })
+      .returning();
+    return rows[0];
+  }
+
+  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    const rows = await this.db
+      .select()
+      .from(passwordResetTokens)
+      .where(eq(passwordResetTokens.token, token));
+    return rows[0];
+  }
+
+  async markPasswordResetTokenUsed(token: string): Promise<void> {
+    await this.db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.token, token));
+  }
+
+  async updateUserPassword(userId: number, hashedPassword: string): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ password: hashedPassword })
+      .where(eq(users.id, userId));
   }
 
   private mapSavedRouteToRoute(r: typeof savedRoutes.$inferSelect): Route {
