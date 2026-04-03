@@ -32,6 +32,15 @@ export const savedRoutes = pgTable("saved_routes", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  token: varchar("token", { length: 255 }).notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const preferences = pgTable("preferences", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
@@ -68,6 +77,7 @@ export type SavedRoute = typeof savedRoutes.$inferSelect;
 export type InsertSavedRoute = z.infer<typeof insertSavedRouteSchema>;
 export type Preferences = typeof preferences.$inferSelect;
 export type InsertPreferences = z.infer<typeof insertPreferencesSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 
 // -- Zod schemas for API validation -----------------------------------------
 

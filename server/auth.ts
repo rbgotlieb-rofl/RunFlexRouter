@@ -2,12 +2,13 @@ import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { scrypt, randomBytes, timingSafeEqual, randomUUID } from "crypto";
 import { promisify } from "util";
 import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
 import { NeonSessionStore } from "./session-store";
 import type { User } from "@shared/schema";
+import { sendPasswordResetEmail } from "./email";
 
 const scryptAsync = promisify(scrypt);
 
@@ -187,6 +188,78 @@ export function setupAuth(app: Express): void {
     }
     const user = req.user!;
     res.json({ id: user.id, username: user.username });
+  });
+
+  // --- Password reset routes ---
+
+  app.post("/api/forgot-password", async (req, res) => {
+    try {
+      const { username } = req.body;
+      if (!username) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      const user = await storage.getUserByUsername(username);
+
+      // Always return success to prevent email enumeration
+      if (!user) {
+        return res.json({ message: "If an account with that email exists, a password reset link has been generated." });
+      }
+
+      const token = randomUUID();
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await storage.createPasswordResetToken(user.id, token, expiresAt);
+
+      // Build full reset URL from the request origin
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const host = req.headers["x-forwarded-host"] || req.get("host");
+      const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+      const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+
+      await sendPasswordResetEmail(username, resetUrl);
+
+      return res.json({ message: "If an account with that email exists, a password reset link has been generated." });
+    } catch (err: any) {
+      console.error("Forgot password error:", err);
+      return res.status(500).json({ message: "Something went wrong" });
+    }
+  });
+
+  app.post("/api/reset-password", async (req, res) => {
+    try {
+      const { token, password } = req.body;
+      if (!token || !password) {
+        return res.status(400).json({ message: "Token and new password are required" });
+      }
+
+      if (password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const resetToken = await storage.getPasswordResetToken(token);
+
+      if (!resetToken) {
+        return res.status(400).json({ message: "Invalid or expired reset link" });
+      }
+
+      if (resetToken.usedAt) {
+        return res.status(400).json({ message: "This reset link has already been used" });
+      }
+
+      if (new Date() > resetToken.expiresAt) {
+        return res.status(400).json({ message: "This reset link has expired" });
+      }
+
+      const hashedPassword = await hashPassword(password);
+      await storage.updateUserPassword(resetToken.userId, hashedPassword);
+      await storage.markPasswordResetTokenUsed(token);
+
+      return res.json({ message: "Password has been reset successfully" });
+    } catch (err: any) {
+      console.error("Reset password error:", err);
+      return res.status(500).json({ message: "Something went wrong" });
+    }
   });
 }
 
