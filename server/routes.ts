@@ -1357,9 +1357,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
+      // Fix estimated times: generateRoutes uses Mapbox walking duration (~12 min/km)
+      // but we need running pace (5 min/km)
+      routes.forEach((r: any) => {
+        if (r.distance > 0) {
+          r.estimatedTime = estimateRunningMins(r.distance);
+        }
+      });
+
+      // For A-to-B with a specific destination, skip strict duration filtering
+      // — the user chose WHERE to go, not how long to run
+      const isDirectAtoB = routeMode === 'a_to_b' && endPoint;
       const targetKm = effectiveDistance || targetDistance || (targetType === 'duration' && effectiveTargetDuration ? effectiveTargetDuration / RUNNING_PACE_MIN_PER_KM : 5);
-      const validRoutes = filterValidRoutes(routes, targetKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
-      validRoutes.forEach((r, i) => { r.id = i + 1; });
+      const validRoutes = isDirectAtoB
+        ? filterValidRoutes(routes, 0.2, undefined, undefined, surfaceType, requiredFeatures)
+        : filterValidRoutes(routes, targetKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
+      validRoutes.forEach((r: any, i: number) => { r.id = i + 1; });
 
       console.log(
         `Generated ${routes.length} routes, ${validRoutes.length} passed validation. First route distance: ${validRoutes[0]?.distance}km`
