@@ -200,50 +200,66 @@ export default function RouteSearch({
                     </RadioGroup>
                   </div>
                   
-                  {/* Target Duration Input */}
+                  {/* Target Duration - Preset buttons */}
                   {targetType === 'duration' && (
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="target-duration-input" className="text-sm font-medium whitespace-nowrap w-20">Duration:</Label>
-                      <div className="flex items-center w-24 border rounded-md overflow-hidden">
-                        <Input
-                          id="target-duration-input"
-                          type="number"
-                          min="5"
-                          max="180"
-                          value={durationInput}
-                          onChange={handleDurationChange}
-                          className="border-0 rounded-none"
-                        />
-                        <div className="px-2 text-sm bg-gray-100">min</div>
+                    <div className="flex flex-col gap-2">
+                      <Label className="text-sm font-medium">Duration:</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {[15, 30, 45, 60, 90, 120].map((mins) => (
+                          <button
+                            key={mins}
+                            type="button"
+                            onClick={() => {
+                              setDurationInput(String(mins));
+                              onTargetDurationChange(mins);
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                              Number(durationInput) === mins
+                                ? 'bg-primary text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            {mins < 60 ? `${mins}min` : `${mins / 60}h${mins % 60 ? ` ${mins % 60}m` : ''}`}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   )}
                   
-                  {/* Target Distance Input */}
+                  {/* Target Distance - Preset buttons */}
                   {targetType === 'distance' && (
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="target-distance-input" className="text-sm font-medium whitespace-nowrap w-20">Distance:</Label>
-                      <div className="flex items-center w-24 border rounded-md overflow-hidden">
-                        <Input
-                          id="target-distance-input"
-                          type="number"
-                          min="0.5"
-                          max="42"
-                          step="0.1"
-                          value={distanceInput}
-                          onChange={handleDistanceChange}
-                          className="border-0 rounded-none"
-                        />
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm font-medium">Distance:</Label>
+                        <Select value={distanceUnit} onValueChange={onDistanceUnitChange}>
+                          <SelectTrigger className="w-16 h-7 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="km">km</SelectItem>
+                            <SelectItem value="miles">mi</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <Select value={distanceUnit} onValueChange={onDistanceUnitChange}>
-                        <SelectTrigger className="w-16">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="km">km</SelectItem>
-                          <SelectItem value="miles">mi</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="flex flex-wrap gap-2">
+                        {(distanceUnit === 'km' ? [3, 5, 10, 15, 21, 42] : [2, 3, 5, 8, 13, 26]).map((dist) => (
+                          <button
+                            key={dist}
+                            type="button"
+                            onClick={() => {
+                              setDistanceInput(String(dist));
+                              onTargetDistanceChange(dist);
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                              Number(distanceInput) === dist
+                                ? 'bg-primary text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            {dist}{distanceUnit === 'km' ? 'km' : 'mi'}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
