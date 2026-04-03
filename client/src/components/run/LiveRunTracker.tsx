@@ -59,6 +59,9 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
   const [showStats, setShowStats] = useState(true);
   const [mapReady, setMapReady] = useState(false);
 
+  // Active route state — updated when recalculation occurs
+  const [activeRoute, setActiveRoute] = useState<Route>(route);
+
   const startTimeRef = useRef<number>(0);
   const pausedTimeRef = useRef<number>(0);
   const lastPositionRef = useRef<GeoPosition | null>(null);
@@ -67,8 +70,38 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
 
   const { position, error: geoError, isTracking, isAcquiring, startTracking, stopTracking } = useGeolocation();
 
+  // Handle route recalculation: update active route and refresh map layer
+  const handleRouteRecalculated = useCallback((update: {
+    routePath: Point[];
+    directions: { instruction: string; distance: number; duration: number }[];
+    distance: number;
+    estimatedTime: number;
+  }) => {
+    setActiveRoute(prev => ({
+      ...prev,
+      routePath: update.routePath,
+      directions: update.directions,
+      distance: update.distance,
+      estimatedTime: update.estimatedTime,
+    }));
+
+    // Update the planned route on the map
+    const map = mapRef.current;
+    if (map) {
+      const src = map.getSource('planned-route') as mapboxgl.GeoJSONSource | undefined;
+      if (src) {
+        const coordinates: [number, number][] = update.routePath.map(p => [p.lng, p.lat]);
+        src.setData({
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates },
+        });
+      }
+    }
+  }, []);
+
   // Turn-by-turn navigation
-  const navState = useNavigation(route, position, runState === 'running');
+  const navState = useNavigation(activeRoute, position, runState === 'running', handleRouteRecalculated);
 
   const { data: config } = useQuery<{ mapboxToken: string }>({
     queryKey: ['/api/config'],
@@ -277,7 +310,7 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
     }
   };
 
-  const routeDistanceKm = route.distance || 0;
+  const routeDistanceKm = activeRoute.distance || 0;
   const progressPercent = routeDistanceKm > 0 ? Math.min(100, (stats.distanceKm / routeDistanceKm) * 100) : 0;
 
   return (
@@ -324,10 +357,18 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
         <div className={`px-4 py-3 ${navState.isOffRoute ? 'bg-red-600' : 'bg-primary'} text-white`}>
           {navState.isOffRoute ? (
             <div className="flex items-center gap-3">
-              <RotateCw className="h-6 w-6 shrink-0 animate-spin" />
+              <RotateCw className={`h-6 w-6 shrink-0 ${navState.isRecalculating ? 'animate-spin' : 'animate-spin'}`} />
               <div>
-                <p className="font-semibold text-sm">Off Route</p>
-                <p className="text-xs opacity-90">{Math.round(navState.offRouteDistance * 1000)}m from route — head back to the path</p>
+                <p className="font-semibold text-sm">
+                  {navState.isRecalculating ? 'Recalculating Route...' : 'Off Route'}
+                </p>
+                <p className="text-xs opacity-90">
+                  {navState.isRecalculating
+                    ? 'Finding a new path from your current position'
+                    : navState.recalculationFailed
+                      ? `${Math.round(navState.offRouteDistance * 1000)}m from route — could not recalculate, head back to the path`
+                      : `${Math.round(navState.offRouteDistance * 1000)}m from route — recalculating shortly`}
+                </p>
               </div>
             </div>
           ) : (

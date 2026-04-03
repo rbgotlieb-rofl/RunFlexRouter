@@ -12,6 +12,8 @@ interface NavigationState {
   currentInstruction: string;
   nextInstruction: string | null;
   progress: number; // 0-1
+  isRecalculating: boolean;
+  recalculationFailed: boolean;
 }
 
 const RUNNING_PACE_MIN_PER_KM = 5;
@@ -116,10 +118,14 @@ const OFF_ROUTE_THRESHOLD_KM = 0.1; // 100m
 const TURN_ALERT_DISTANCE_KM = 0.1; // Alert at 100m before turn
 const TURN_IMMINENT_DISTANCE_KM = 0.03; // 30m = turn now
 
+const RECALCULATE_COOLDOWN_MS = 15000; // Don't recalculate more than once per 15s
+const RECALCULATE_THRESHOLD_KM = 0.15; // Recalculate at 150m off-route (above the 100m detection)
+
 export function useNavigation(
   route: Route,
   userPosition: { lat: number; lng: number } | null,
-  isRunning: boolean
+  isRunning: boolean,
+  onRouteRecalculated?: (update: { routePath: Point[]; directions: DirectionStep[]; distance: number; estimatedTime: number }) => void,
 ) {
   const [navState, setNavState] = useState<NavigationState>({
     currentStepIndex: 0,
@@ -131,13 +137,76 @@ export function useNavigation(
     currentInstruction: '',
     nextInstruction: null,
     progress: 0,
+    isRecalculating: false,
+    recalculationFailed: false,
   });
 
   const lastAlertStepRef = useRef<number>(-1);
   const lastImminentStepRef = useRef<number>(-1);
+  const lastRecalcTimeRef = useRef<number>(0);
+  const isRecalculatingRef = useRef(false);
   const routePath = (route.routePath || []) as Point[];
   const directions = (route.directions || []) as DirectionStep[];
   const totalRouteDistance = route.distance || 0;
+
+  const recalculateRoute = useCallback(async (
+    currentPos: { lat: number; lng: number },
+    destination: Point,
+    remaining: Point[],
+  ) => {
+    if (isRecalculatingRef.current) return;
+    const now = Date.now();
+    if (now - lastRecalcTimeRef.current < RECALCULATE_COOLDOWN_MS) return;
+
+    isRecalculatingRef.current = true;
+    lastRecalcTimeRef.current = now;
+    setNavState(prev => ({ ...prev, isRecalculating: true, recalculationFailed: false }));
+
+    try {
+      const resp = await fetch('/api/routes/recalculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPosition: currentPos,
+          destination,
+          remainingRoute: remaining,
+        }),
+      });
+
+      if (!resp.ok) throw new Error(`Recalculate failed: ${resp.status}`);
+
+      const data = await resp.json();
+      speak('Route recalculated');
+      haptic('medium');
+
+      if (onRouteRecalculated) {
+        onRouteRecalculated({
+          routePath: data.routePath,
+          directions: data.directions,
+          distance: data.distance,
+          estimatedTime: data.estimatedTime,
+        });
+      }
+
+      // Reset alert tracking since we have a new route
+      lastAlertStepRef.current = -1;
+      lastImminentStepRef.current = -1;
+
+      setNavState(prev => ({
+        ...prev,
+        isOffRoute: false,
+        offRouteDistance: 0,
+        isRecalculating: false,
+        recalculationFailed: false,
+        currentStepIndex: 0,
+      }));
+    } catch (err) {
+      console.error('Route recalculation failed:', err);
+      setNavState(prev => ({ ...prev, isRecalculating: false, recalculationFailed: true }));
+    } finally {
+      isRecalculatingRef.current = false;
+    }
+  }, [onRouteRecalculated]);
 
   useEffect(() => {
     if (!userPosition || !isRunning || routePath.length < 2 || directions.length === 0) return;
@@ -165,6 +234,13 @@ export function useNavigation(
         haptic('heavy');
         lastAlertStepRef.current = -2;
       }
+
+      // Trigger automatic recalculation at 150m+ off-route
+      if (nearest.distance > RECALCULATE_THRESHOLD_KM && onRouteRecalculated) {
+        const destination = routePath[routePath.length - 1];
+        const remaining = routePath.slice(nearest.index);
+        recalculateRoute(userPosition, destination, remaining);
+      }
     }
     // Turn approaching alert (100m)
     else if (distToTurn <= TURN_ALERT_DISTANCE_KM && nextStep && lastAlertStepRef.current !== stepIdx) {
@@ -191,7 +267,7 @@ export function useNavigation(
 
     const progress = totalRouteDistance > 0 ? Math.min(1, distAlongRoute / totalRouteDistance) : 0;
 
-    setNavState({
+    setNavState(prev => ({
       currentStepIndex: stepIdx,
       distanceToNextTurn: distToTurn,
       distanceTraveled: distAlongRoute,
@@ -201,8 +277,10 @@ export function useNavigation(
       currentInstruction: currentStep?.instruction || '',
       nextInstruction: nextStep?.instruction || null,
       progress,
-    });
-  }, [userPosition, isRunning, routePath, directions, totalRouteDistance]);
+      isRecalculating: prev.isRecalculating,
+      recalculationFailed: prev.recalculationFailed,
+    }));
+  }, [userPosition, isRunning, routePath, directions, totalRouteDistance, recalculateRoute, onRouteRecalculated]);
 
   return navState;
 }

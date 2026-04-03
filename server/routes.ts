@@ -1384,6 +1384,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // --- Route recalculation from current position ---
+
+  app.post("/api/routes/recalculate", async (req, res) => {
+    try {
+      const { currentPosition, destination, remainingRoute } = req.body;
+
+      if (!currentPosition?.lat || !currentPosition?.lng || !destination?.lat || !destination?.lng) {
+        return res.status(400).json({ message: "currentPosition and destination (each with lat, lng) are required" });
+      }
+
+      const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || "";
+      if (!mapboxToken) {
+        return res.status(500).json({ message: "Mapbox token not configured" });
+      }
+
+      // Build waypoints: current position -> (optional intermediate points) -> destination
+      // If the remaining route has significant waypoints, sample a few to keep the runner
+      // on a reasonable path toward the destination rather than a pure point-to-point line.
+      const waypoints: { lat: number; lng: number }[] = [];
+      if (remainingRoute && Array.isArray(remainingRoute) && remainingRoute.length > 4) {
+        // Sample up to 2 intermediate waypoints from the remaining planned route
+        const step = Math.floor(remainingRoute.length / 3);
+        waypoints.push(remainingRoute[step]);
+        waypoints.push(remainingRoute[step * 2]);
+      }
+
+      // Build coordinate string for Mapbox (lng,lat format)
+      let coordParts = [`${currentPosition.lng},${currentPosition.lat}`];
+      for (const wp of waypoints) {
+        if (wp?.lat && wp?.lng) {
+          coordParts.push(`${wp.lng},${wp.lat}`);
+        }
+      }
+      coordParts.push(`${destination.lng},${destination.lat}`);
+      const coordString = coordParts.join(";");
+
+      const params = new URLSearchParams({
+        access_token: mapboxToken,
+        geometries: "geojson",
+        overview: "full",
+        steps: "true",
+      });
+
+      const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${coordString}?${params}`;
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        console.error(`Mapbox recalculate error: ${resp.status}`);
+        return res.status(502).json({ message: "Failed to recalculate route from Mapbox" });
+      }
+
+      const data = await resp.json();
+      const route = data?.routes?.[0];
+      if (!route?.geometry?.coordinates) {
+        return res.status(404).json({ message: "No route found between current position and destination" });
+      }
+
+      // Convert geometry to our Point format
+      const routePath = route.geometry.coordinates.map((c: number[]) => ({
+        lat: c[1],
+        lng: c[0],
+      }));
+
+      const distanceKm = route.distance / 1000;
+      const durationMin = route.duration / 60;
+
+      // Extract turn-by-turn directions from Mapbox steps
+      const directions: { instruction: string; distance: number; duration: number }[] = [];
+      for (const leg of route.legs || []) {
+        for (const step of leg.steps || []) {
+          const stepDist = step.distance / 1000;
+          if (stepDist > 0.01) {
+            directions.push({
+              instruction: step.maneuver?.instruction || "Continue",
+              distance: stepDist,
+              duration: step.duration / 60,
+            });
+          }
+        }
+      }
+
+      // Add a final "arrive" step if none exists
+      if (directions.length === 0 || !directions[directions.length - 1].instruction.toLowerCase().includes("arrive")) {
+        directions.push({
+          instruction: "Arrive at your destination",
+          distance: 0.01,
+          duration: 0.1,
+        });
+      }
+
+      console.log(`♻️ Recalculated route: ${distanceKm.toFixed(2)}km, ${directions.length} steps from (${currentPosition.lat.toFixed(4)},${currentPosition.lng.toFixed(4)})`);
+
+      return res.json({
+        routePath,
+        distance: distanceKm,
+        estimatedTime: durationMin,
+        directions,
+      });
+    } catch (error) {
+      console.error("Error recalculating route:", error);
+      return res.status(500).json({ message: "Error recalculating route" });
+    }
+  });
+
   // --- Saved routes (using /api/saved/* to avoid conflict with /api/routes/:id) ---
 
   app.post("/api/saved", async (req, res) => {
