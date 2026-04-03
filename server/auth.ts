@@ -8,6 +8,7 @@ import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
 import { NeonSessionStore } from "./session-store";
 import type { User } from "@shared/schema";
+import { sendPasswordResetEmail } from "./email";
 
 const scryptAsync = promisify(scrypt);
 
@@ -210,10 +211,13 @@ export function setupAuth(app: Express): void {
 
       await storage.createPasswordResetToken(user.id, token, expiresAt);
 
-      // TODO: Send email with reset link when email service is configured.
-      // For now, log the token so it can be used during development.
-      const resetUrl = `/reset-password?token=${token}`;
-      console.log(`[Password Reset] User: ${username} | Reset URL: ${resetUrl}`);
+      // Build full reset URL from the request origin
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const host = req.headers["x-forwarded-host"] || req.get("host");
+      const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+      const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+
+      await sendPasswordResetEmail(username, resetUrl);
 
       return res.json({ message: "If an account with that email exists, a password reset link has been generated." });
     } catch (err: any) {
