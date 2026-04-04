@@ -22,6 +22,7 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
   const [activePlaylist, setActivePlaylist] = useState<'spotify' | 'apple' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -170,8 +171,15 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
         {/* Scrollable content below fixed header (59px + ~44px header = 103px) */}
         <div className="absolute top-0 left-0 right-0 bottom-0 overflow-y-auto overflow-x-hidden" style={{ paddingTop: '103px' }}>
           {/* Map */}
-          <div className="w-full h-[240px]">
-            <RouteMapPreview route={route} height={240} detailMode={true} userLocation={userLocation} />
+          <div className="w-full">
+            <RouteMapPreview
+              route={route}
+              height={240}
+              detailMode={true}
+              userLocation={userLocation}
+              expanded={mapExpanded}
+              onToggleExpand={() => setMapExpanded(prev => !prev)}
+            />
           </div>
 
           <div className="px-4 pt-4 pb-8">

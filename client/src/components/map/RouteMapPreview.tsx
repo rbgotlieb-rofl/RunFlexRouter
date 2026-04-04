@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Route, Point } from '@shared/schema';
 import mapboxgl from 'mapbox-gl';
 import { useQuery } from '@tanstack/react-query';
@@ -9,13 +9,15 @@ interface RouteMapPreviewProps {
   height?: number;
   detailMode?: boolean;
   userLocation?: Point | null;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
 }
 
 interface MapConfig {
   mapboxToken: string;
 }
 
-export default function RouteMapPreview({ route, height = 180, detailMode = false, userLocation }: RouteMapPreviewProps) {
+export default function RouteMapPreview({ route, height = 180, detailMode = false, userLocation, expanded = false, onToggleExpand }: RouteMapPreviewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
   const pulseAnimRef = useRef<number | null>(null);
@@ -51,16 +53,22 @@ export default function RouteMapPreview({ route, height = 180, detailMode = fals
         center = [route.startPoint.lng, route.startPoint.lat] as [number, number];
       }
 
-      // Create the map instance
+      // Create the map instance — interactive when in detail mode for zoom/pan
+      const isInteractive = detailMode;
       const map = new mapboxgl.Map({
         container: mapContainerRef.current,
         style: 'mapbox://styles/mapbox/streets-v11',
         center: center,
         zoom: 11,
-        interactive: false,
+        interactive: isInteractive,
         attributionControl: false
       });
-      
+
+      // Add zoom/navigation controls in detail mode
+      if (isInteractive) {
+        map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+      }
+
       // Save map instance
       mapInstanceRef.current = map;
 
@@ -186,7 +194,8 @@ export default function RouteMapPreview({ route, height = 180, detailMode = fals
           
           // Fit map to the route bounds
           map.fitBounds(bounds, {
-            padding: 30
+            padding: detailMode ? 40 : 30,
+            maxZoom: 16
           });
         } catch (error) {
           console.error('Error adding route to map:', error);
@@ -206,13 +215,34 @@ export default function RouteMapPreview({ route, height = 180, detailMode = fals
         mapInstanceRef.current = null;
       }
     };
-  }, [config, route]);
+  }, [config, route, detailMode]);
+
+  // Re-trigger resize when expanded state changes so Mapbox redraws correctly
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current?.resize();
+      }, 50);
+    }
+  }, [expanded]);
+
+  const effectiveHeight = expanded ? 480 : height;
 
   return (
-    <div 
-      ref={mapContainerRef} 
-      className="route-preview-map w-full rounded-lg overflow-hidden" 
-      style={{ height: `${height}px` }}
-    />
+    <div className="relative">
+      <div
+        ref={mapContainerRef}
+        className="route-preview-map w-full rounded-lg overflow-hidden transition-[height] duration-300 ease-in-out"
+        style={{ height: `${effectiveHeight}px` }}
+      />
+      {detailMode && onToggleExpand && (
+        <button
+          onClick={onToggleExpand}
+          className="absolute bottom-2 left-2 bg-white/90 hover:bg-white shadow-md rounded-md px-3 py-1.5 text-xs font-medium text-gray-700 z-10 transition-colors"
+        >
+          {expanded ? 'Collapse Map' : 'Expand Map'}
+        </button>
+      )}
+    </div>
   );
 }
