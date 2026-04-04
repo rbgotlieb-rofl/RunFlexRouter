@@ -147,6 +147,7 @@ export type DirectionStep = {
   instruction: string;
   distance: number;  // in kilometers
   duration: number;  // in minutes
+  culturalSite?: string;  // name of a nearby cultural site (e.g. "British Museum")
 };
 
 export type RouteFeature = 'scenic' | 'low_traffic' | 'well_lit' | 'waterfront' | 'urban' | 'open_view' | 'medium_traffic' | 'high_traffic' | 'cultural_sites' | 'morning_run';

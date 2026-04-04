@@ -359,11 +359,14 @@ async function isRouteLit(routePath: { lat: number; lng: number }[]): Promise<bo
 /**
  * Check if a route passes near cultural sites (museums, galleries, theatres, monuments).
  * Uses Mapbox geocoding to search for cultural POIs near sample points.
+ * Returns an array of found cultural sites with their names and locations.
  */
-async function routeHasCulturalSites(routePath: { lat: number; lng: number }[]): Promise<boolean> {
-  if (routePath.length < 2) return false;
+type CulturalSiteResult = { name: string; lat: number; lng: number };
+
+async function findCulturalSitesAlongRoute(routePath: { lat: number; lng: number }[]): Promise<CulturalSiteResult[]> {
+  if (routePath.length < 2) return [];
   const token = process.env.MAPBOX_ACCESS_TOKEN;
-  if (!token) return false;
+  if (!token) return [];
 
   const culturalQueries = ['museum', 'gallery', 'theatre', 'monument', 'historic', 'cathedral', 'castle'];
 
@@ -373,6 +376,9 @@ async function routeHasCulturalSites(routePath: { lat: number; lng: number }[]):
     Math.floor(routePath.length * 0.5),
     Math.floor(routePath.length * 0.75),
   ];
+
+  const found: CulturalSiteResult[] = [];
+  const seenNames = new Set<string>();
 
   for (const idx of sampleIndices) {
     const pt = routePath[idx];
@@ -395,12 +401,79 @@ async function routeHasCulturalSites(routePath: { lat: number; lng: number }[]):
           const dLat = (poiLat - pt.lat) * 111;
           const dLng = (poiLng - pt.lng) * 111 * Math.cos(pt.lat * Math.PI / 180);
           const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-          if (distKm < 1.0) return true; // Cultural site within 1km of route
+          if (distKm < 1.0 && !seenNames.has(poi.text)) {
+            seenNames.add(poi.text);
+            found.push({ name: poi.text, lat: poiLat, lng: poiLng });
+          }
         }
       } catch { continue; }
     }
   }
-  return false;
+  return found;
+}
+
+/**
+ * Annotate direction steps with nearby cultural site names.
+ * For each cultural site, finds the closest point on the route path, then maps
+ * that to the corresponding direction step based on cumulative distance.
+ */
+function annotateCulturalSitesOnDirections(
+  directions: { instruction: string; distance: number; duration: number; culturalSite?: string }[],
+  routePath: { lat: number; lng: number }[],
+  culturalSites: CulturalSiteResult[]
+) {
+  if (!routePath.length || !directions.length || !culturalSites.length) return;
+
+  // Build cumulative distance along route path points
+  const cumDist: number[] = [0];
+  for (let i = 1; i < routePath.length; i++) {
+    const dLat = (routePath[i].lat - routePath[i - 1].lat) * 111;
+    const dLng = (routePath[i].lng - routePath[i - 1].lng) * 111 * Math.cos(routePath[i].lat * Math.PI / 180);
+    cumDist.push(cumDist[i - 1] + Math.sqrt(dLat * dLat + dLng * dLng));
+  }
+  const totalRouteDist = cumDist[cumDist.length - 1];
+
+  // Build cumulative distance thresholds for each direction step
+  const stepEnds: number[] = [];
+  let acc = 0;
+  for (const step of directions) {
+    acc += step.distance;
+    stepEnds.push(acc);
+  }
+
+  for (const site of culturalSites) {
+    // Find the closest route path point to this cultural site
+    let minDist = Infinity;
+    let closestIdx = 0;
+    for (let i = 0; i < routePath.length; i++) {
+      const dLat = (site.lat - routePath[i].lat) * 111;
+      const dLng = (site.lng - routePath[i].lng) * 111 * Math.cos(routePath[i].lat * Math.PI / 180);
+      const d = Math.sqrt(dLat * dLat + dLng * dLng);
+      if (d < minDist) {
+        minDist = d;
+        closestIdx = i;
+      }
+    }
+
+    // Map route path position to direction step
+    const siteRouteKm = cumDist[closestIdx];
+    // Scale to direction step distances (they may not match route path total exactly)
+    const totalStepDist = stepEnds[stepEnds.length - 1] || 1;
+    const scaledKm = (siteRouteKm / (totalRouteDist || 1)) * totalStepDist;
+
+    let stepIdx = directions.length - 1;
+    for (let i = 0; i < stepEnds.length; i++) {
+      if (scaledKm <= stepEnds[i]) {
+        stepIdx = i;
+        break;
+      }
+    }
+
+    // Only set if this step doesn't already have a cultural site
+    if (!directions[stepIdx].culturalSite) {
+      directions[stepIdx].culturalSite = site.name;
+    }
+  }
 }
 
 /**
@@ -1243,8 +1316,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Cultural sites: check for museums, galleries, etc. near route
           if (!features.includes('cultural_sites')) {
-            const hasCultural = await routeHasCulturalSites(r.routePath);
-            if (hasCultural) features.push('cultural_sites');
+            const culturalSites = await findCulturalSitesAlongRoute(r.routePath);
+            if (culturalSites.length > 0) {
+              features.push('cultural_sites');
+              // Annotate the nearest direction step for each cultural site
+              if (Array.isArray(r.directions) && r.directions.length > 0) {
+                annotateCulturalSitesOnDirections(r.directions, r.routePath, culturalSites);
+              }
+            }
           }
 
           r.features = features;
