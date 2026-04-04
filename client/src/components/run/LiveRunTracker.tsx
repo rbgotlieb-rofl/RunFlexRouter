@@ -7,10 +7,12 @@ import { useQuery } from '@tanstack/react-query';
 import { addArrowLayer, addFlagLayers } from '@/lib/route-arrows';
 import {
   Play, Pause, Square, X, Navigation, Clock, Footprints, Gauge, ChevronUp, ChevronDown,
-  Locate, AlertTriangle, ArrowUp, CornerDownRight, RotateCw
+  Locate, AlertTriangle, ArrowUp, CornerDownRight, RotateCw, Watch
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigation } from '@/hooks/use-navigation';
+import { useGarmin } from '@/hooks/use-garmin';
+import GarminWatchStatus from './GarminWatchStatus';
 
 interface LiveRunTrackerProps {
   route: Route;
@@ -67,8 +69,22 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
 
   const { position, error: geoError, isTracking, isAcquiring, startTracking, stopTracking } = useGeolocation();
 
-  // Turn-by-turn navigation
-  const navState = useNavigation(route, position, runState === 'running');
+  // Garmin watch integration
+  const {
+    watchState,
+    connectToWatch,
+    disconnectWatch,
+    sendCourseToWatch,
+    setNavigationMode,
+    sendNavUpdate,
+    shouldSuppressPhoneNav,
+    isBluetoothAvailable: hasBluetooth,
+  } = useGarmin();
+
+  const [showGarminPanel, setShowGarminPanel] = useState(false);
+
+  // Turn-by-turn navigation (suppress phone alerts when Garmin watch is handling navigation)
+  const navState = useNavigation(route, position, runState === 'running', shouldSuppressPhoneNav);
 
   const { data: config } = useQuery<{ mapboxToken: string }>({
     queryKey: ['/api/config'],
@@ -214,6 +230,19 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
     }
   }, [position, runState]);
 
+  // Send navigation updates to Garmin watch when running
+  useEffect(() => {
+    if (runState !== 'running' || !watchState.isCourseLoaded) return;
+
+    sendNavUpdate({
+      progress: navState.progress,
+      currentInstruction: navState.currentInstruction,
+      distanceToNextTurn: navState.distanceToNextTurn,
+      nextInstruction: navState.nextInstruction,
+      isOffRoute: navState.isOffRoute,
+    });
+  }, [runState, navState, watchState.isCourseLoaded, sendNavUpdate]);
+
   useEffect(() => {
     if (runState === 'running') {
       timerRef.current = setInterval(() => {
@@ -294,6 +323,21 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
           </button>
 
           <div className="pointer-events-auto flex gap-2">
+            {hasBluetooth && (
+              <button
+                onClick={() => setShowGarminPanel(!showGarminPanel)}
+                className={`backdrop-blur-sm rounded-full p-2 shadow-lg transition-colors ${
+                  watchState.connectionStatus === 'connected'
+                    ? 'bg-green-500/90 hover:bg-green-500'
+                    : 'bg-white/90 hover:bg-white'
+                }`}
+                title="Garmin Watch"
+              >
+                <Watch className={`h-5 w-5 ${
+                  watchState.connectionStatus === 'connected' ? 'text-white' : 'text-gray-700'
+                }`} />
+              </button>
+            )}
             <button
               onClick={centerOnUser}
               className="bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-lg hover:bg-white transition-colors"
@@ -317,7 +361,33 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
             <p className="text-sm text-blue-700">Acquiring GPS signal...</p>
           </div>
         )}
+
+        {/* Garmin Watch panel (slides in from top-right) */}
+        {showGarminPanel && (
+          <div className="absolute top-16 right-4 left-4 z-10">
+            <GarminWatchStatus
+              watchState={watchState}
+              onConnect={connectToWatch}
+              onDisconnect={disconnectWatch}
+              onSetNavMode={setNavigationMode}
+              isRunning={runState === 'running'}
+            />
+          </div>
+        )}
       </div>
+
+      {/* Garmin watch navigation active indicator */}
+      {shouldSuppressPhoneNav && runState === 'running' && (
+        <div className="px-4 py-2 bg-gray-800 text-white flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Watch className="h-4 w-4 text-green-400" />
+            <span className="text-xs">Directions on Garmin — phone alerts off</span>
+          </div>
+          <span className="text-xs font-medium tabular-nums text-green-400">
+            {Math.round(watchState.watchProgress * 100)}%
+          </span>
+        </div>
+      )}
 
       {/* Turn-by-turn navigation banner */}
       {runState === 'running' && navState.currentInstruction && (

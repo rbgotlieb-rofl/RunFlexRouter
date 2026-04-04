@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<strings>
+  <string id="AppName">RunFlex Nav</string>
+  <string id="WaitingForCourse">Waiting for course from phone...</string>
+  <string id="OffRoute">OFF ROUTE</string>
+  <string id="OnTrack">On Track</string>
+  <string id="Complete">Run Complete!</string>
+  <string id="Progress">Progress</string>
+  <string id="NextTurn">Next Turn</string>
+</strings>

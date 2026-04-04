@@ -5,6 +5,7 @@ import { routeFilterSchema } from "@shared/schema";
 import { generateRoutes } from "./services/route-generator";
 import { searchLocations, geocodeLocation } from "./services/location-service";
 import { generateCircularRoute, hasRetracing, isGoodLoop, computeLoopScore } from "./generateCircularRoute";
+import { generateGarminGpx, buildGarminCourseData } from "./services/garmin-course-export";
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -1589,6 +1590,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Reverse geocode error:", error);
       res.json({ name: null });
+    }
+  });
+
+  // ---------- Garmin course export endpoints ----------
+
+  /**
+   * GET /api/routes/:id/garmin/gpx
+   * Export a saved route as a GPX course file for Garmin devices.
+   */
+  app.get("/api/routes/:id/garmin/gpx", async (req, res) => {
+    try {
+      const routeId = parseInt(req.params.id, 10);
+      if (isNaN(routeId)) {
+        return res.status(400).json({ message: "Invalid route ID" });
+      }
+
+      const route = await storage.getRoute(routeId);
+      if (!route) {
+        return res.status(404).json({ message: "Route not found" });
+      }
+
+      const gpx = generateGarminGpx({
+        name: route.name,
+        description: route.description || undefined,
+        distance: route.distance,
+        routePath: (route.routePath || []) as { lat: number; lng: number }[],
+        directions: (route.directions || []) as { instruction: string; distance: number; duration: number }[],
+      });
+
+      res.setHeader("Content-Type", "application/gpx+xml");
+      res.setHeader("Content-Disposition", `attachment; filename="${route.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.gpx"`);
+      res.send(gpx);
+    } catch (error) {
+      console.error("GPX export error:", error);
+      res.status(500).json({ message: "Failed to export GPX" });
+    }
+  });
+
+  /**
+   * POST /api/garmin/course
+   * Build a lightweight course data payload for sending to a Garmin watch via BLE.
+   * Accepts a route object in the request body (doesn't require a saved route).
+   */
+  app.post("/api/garmin/course", async (req, res) => {
+    try {
+      const { name, distance, routePath, directions } = req.body;
+
+      if (!name || !routePath || !Array.isArray(routePath) || routePath.length < 2) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+
+      const courseData = buildGarminCourseData({
+        name,
+        distance: distance || 0,
+        routePath,
+        directions: directions || [],
+      });
+
+      res.json(courseData);
+    } catch (error) {
+      console.error("Garmin course build error:", error);
+      res.status(500).json({ message: "Failed to build course data" });
     }
   });
 

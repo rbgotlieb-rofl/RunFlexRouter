@@ -119,7 +119,9 @@ const TURN_IMMINENT_DISTANCE_KM = 0.03; // 30m = turn now
 export function useNavigation(
   route: Route,
   userPosition: { lat: number; lng: number } | null,
-  isRunning: boolean
+  isRunning: boolean,
+  /** When true, voice/haptic alerts on the phone are suppressed (Garmin watch handles them). */
+  suppressPhoneAlerts: boolean = false,
 ) {
   const [navState, setNavState] = useState<NavigationState>({
     currentStepIndex: 0,
@@ -161,8 +163,10 @@ export function useNavigation(
       const offMeters = Math.round(nearest.distance * 1000);
       alert = `Off route — ${offMeters}m from path`;
       if (lastAlertStepRef.current !== -2) {
-        speak(`You are ${offMeters} meters off route`);
-        haptic('heavy');
+        if (!suppressPhoneAlerts) {
+          speak(`You are ${offMeters} meters off route`);
+          haptic('heavy');
+        }
         lastAlertStepRef.current = -2;
       }
     }
@@ -170,23 +174,29 @@ export function useNavigation(
     else if (distToTurn <= TURN_ALERT_DISTANCE_KM && nextStep && lastAlertStepRef.current !== stepIdx) {
       const meters = Math.round(distToTurn * 1000);
       alert = `In ${meters}m: ${nextStep.instruction}`;
-      speak(`In ${meters} meters, ${nextStep.instruction}`);
-      haptic('medium');
+      if (!suppressPhoneAlerts) {
+        speak(`In ${meters} meters, ${nextStep.instruction}`);
+        haptic('medium');
+      }
       lastAlertStepRef.current = stepIdx;
     }
     // Turn imminent (30m)
     else if (distToTurn <= TURN_IMMINENT_DISTANCE_KM && nextStep && lastImminentStepRef.current !== stepIdx) {
       alert = nextStep.instruction;
-      speak(nextStep.instruction);
-      haptic('heavy');
+      if (!suppressPhoneAlerts) {
+        speak(nextStep.instruction);
+        haptic('heavy');
+      }
       lastImminentStepRef.current = stepIdx;
     }
 
     // Reset off-route alert tracking when back on route
     if (!isOffRoute && lastAlertStepRef.current === -2) {
       lastAlertStepRef.current = -1;
-      speak('Back on route');
-      haptic('light');
+      if (!suppressPhoneAlerts) {
+        speak('Back on route');
+        haptic('light');
+      }
     }
 
     const progress = totalRouteDistance > 0 ? Math.min(1, distAlongRoute / totalRouteDistance) : 0;

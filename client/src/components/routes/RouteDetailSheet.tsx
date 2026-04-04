@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import { Route, RouteFeature, Point } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Heart, Share2, Watch, ArrowLeft, Loader2 } from "lucide-react";
+import { Heart, Share2, Watch, ArrowLeft, Loader2, Download, Bluetooth } from "lucide-react";
 import { getFeatureIcon, getRouteTypeColor } from "@/lib/route-utils";
 import RouteDirections from "./RouteDirections";
 import RouteMapPreview from "../map/RouteMapPreview";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/api";
+import { useGarmin } from "@/hooks/use-garmin";
 interface RouteDetailSheetProps {
   route: Route;
   isOpen: boolean;
@@ -82,51 +83,82 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
     }
   };
 
-  // Function to send the route to a Garmin watch
+  // Garmin watch connection
+  const {
+    watchState,
+    connectToWatch,
+    disconnectWatch,
+    sendCourseToWatch,
+    isBluetoothAvailable: hasBluetooth,
+  } = useGarmin();
+
+  // Send course to watch via BLE after building it on the server
   const sendToGarminWatch = async () => {
     try {
       setSendingToWatch(true);
-      
-      // Simulate API call to Garmin Connect
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Prepare the route data in GPX format for Garmin
-      const routeData = {
-        id: route.id,
-        name: route.name.replace(/\s*\([0-9.]+km\)/i, ''), // Remove distance from name
-        waypoints: Array.isArray(route.routePath) 
-          ? route.routePath.map((point: {lat: number, lng: number}) => ({
-              lat: point.lat,
-              lng: point.lng
-            }))
-          : []
-      };
-      
-      // Log the data being sent (for debugging)
-      console.log("Sending route to Garmin watch:", routeData);
-      
-      // In a real implementation, we would make an actual API call to Garmin Connect
-      // For now, we'll simulate a successful transfer
-      
-      // Get clean route name without distance
-      const cleanRouteName = route.name.replace(/\s*\([0-9.]+km\)/i, '');
-      
+
+      // If not connected, connect first
+      if (watchState.connectionStatus !== 'connected') {
+        const connected = await connectToWatch();
+        if (!connected) {
+          toast({
+            title: "Watch Not Found",
+            description: "Could not find a Garmin watch. Make sure Bluetooth is on and your watch is nearby.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      // Build course data via server (handles path simplification + turn point extraction)
+      const res = await authFetch("/api/garmin/course", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: route.name,
+          distance: route.distance,
+          routePath: route.routePath,
+          directions: route.directions,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to build course data");
+
+      const courseData = await res.json();
+      courseData.routeId = route.id;
+
+      // Send to watch via BLE
+      const sent = await sendCourseToWatch(courseData);
+      if (!sent) throw new Error("BLE transfer failed");
+
+      const cleanName = route.name.replace(/\s*\([0-9.]+km\)/i, '');
       toast({
-        title: "Route Sent to Garmin Watch",
-        description: `${cleanRouteName} has been sent to your connected Garmin device.`,
+        title: "Course Sent to Watch",
+        description: `${cleanName} is loaded on your ${watchState.device?.deviceName || 'Garmin'}. Navigation will start when you begin your run.`,
         duration: 5000,
       });
-      
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending route to Garmin watch:", error);
       toast({
         title: "Failed to Send Route",
-        description: "There was a problem sending the route to your Garmin device. Please try again.",
+        description: error.message || "There was a problem sending the route to your Garmin device.",
         variant: "destructive",
-        duration: 5000,
       });
     } finally {
       setSendingToWatch(false);
+    }
+  };
+
+  // Download GPX file for manual Garmin import
+  const downloadGpx = () => {
+    const routePath = Array.isArray(route.routePath) ? route.routePath : [];
+    const directions = Array.isArray(route.directions) ? route.directions : [];
+
+    // If route is saved, use server endpoint; otherwise build client-side link
+    if (route.id) {
+      window.open(`/api/routes/${route.id}/garmin/gpx`, '_blank');
+    } else {
+      toast({ title: "Save Route First", description: "Save this route to download the GPX file." });
     }
   };
   
@@ -206,15 +238,42 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
                 Start Run
               </Button>
 
-              <Button
-                onClick={sendToGarminWatch}
-                disabled={sendingToWatch}
-                variant="outline"
-                className="w-full flex items-center justify-center gap-2 py-4"
-              >
-                <Watch className="h-5 w-5" />
-                {sendingToWatch ? "Sending to Watch..." : "Send to Garmin Watch"}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={sendToGarminWatch}
+                  disabled={sendingToWatch}
+                  variant="outline"
+                  className="flex-1 flex items-center justify-center gap-2 py-4"
+                >
+                  {sendingToWatch ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Bluetooth className="h-4 w-4" />
+                  )}
+                  {sendingToWatch
+                    ? "Sending..."
+                    : watchState.isCourseLoaded
+                    ? "Sent to Watch"
+                    : "Send to Garmin"}
+                </Button>
+                <Button
+                  onClick={downloadGpx}
+                  variant="outline"
+                  className="flex items-center justify-center gap-2 py-4 px-4"
+                  title="Download GPX for Garmin"
+                >
+                  <Download className="h-4 w-4" />
+                  GPX
+                </Button>
+              </div>
+
+              {watchState.connectionStatus === 'connected' && watchState.device && (
+                <div className="flex items-center gap-2 text-xs text-green-600 px-1">
+                  <Watch className="h-3.5 w-3.5" />
+                  <span>Connected to {watchState.device.deviceName}</span>
+                  {watchState.isCourseLoaded && <span className="font-medium">— Course loaded</span>}
+                </div>
+              )}
             </div>
 
             {/* Route features */}

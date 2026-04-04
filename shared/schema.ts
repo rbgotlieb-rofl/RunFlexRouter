@@ -153,6 +153,45 @@ export type RouteFeature = 'scenic' | 'low_traffic' | 'well_lit' | 'waterfront' 
 export type RouteType = 'all' | 'any' | 'urban' | 'park' | 'waterfront';
 export type RouteMode = 'all' | 'a_to_b' | 'loop' | 'duration';
 
+// -- Garmin watch integration types -----------------------------------------
+
+export type GarminConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'syncing' | 'error';
+
+export type GarminNavigationMode = 'phone' | 'watch' | 'both';
+
+export interface GarminDeviceInfo {
+  deviceId: string;
+  deviceName: string;
+  modelName: string;
+  firmwareVersion: string;
+  batteryLevel: number; // 0-100
+}
+
+export interface GarminCourseData {
+  routeId: number;
+  name: string;
+  distance: number; // km
+  waypoints: Point[];
+  turnPoints: GarminTurnPoint[];
+  totalDistance: number; // km (for progress calculation)
+}
+
+export interface GarminTurnPoint {
+  position: Point;
+  instruction: string;
+  distanceFromStart: number; // km
+  turnType: 'left' | 'right' | 'straight' | 'u-turn' | 'arrive';
+}
+
+export interface GarminWatchState {
+  connectionStatus: GarminConnectionStatus;
+  device: GarminDeviceInfo | null;
+  navigationMode: GarminNavigationMode;
+  isCourseLoaded: boolean;
+  watchProgress: number; // 0-1
+  watchPosition: Point | null;
+}
+
 // -- Backwards-compatible types used by storage -----------------------------
 
 export type RoutePreferences = {
