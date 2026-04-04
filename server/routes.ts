@@ -1655,6 +1655,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * POST /api/garmin/course/gpx
+   * Generate a GPX course file from route data in the request body.
+   * Used by the mobile app to create GPX files for sharing to Garmin Connect.
+   */
+  app.post("/api/garmin/course/gpx", async (req, res) => {
+    try {
+      const { name, distance, routePath, directions } = req.body;
+
+      if (!name || !routePath || !Array.isArray(routePath) || routePath.length < 2) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+
+      const gpx = generateGarminGpx({
+        name,
+        distance: distance || 0,
+        routePath,
+        directions: directions || [],
+      });
+
+      res.setHeader("Content-Type", "application/gpx+xml");
+      res.send(gpx);
+    } catch (error) {
+      console.error("GPX export error:", error);
+      res.status(500).json({ message: "Failed to export GPX" });
+    }
+  });
+
   // HTTP server
   const httpServer = createServer(app);
   return httpServer;

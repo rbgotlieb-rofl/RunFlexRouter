@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { useNavigation } from '@/hooks/use-navigation';
 import { useGarmin } from '@/hooks/use-garmin';
-import GarminWatchStatus from './GarminWatchStatus';
 
 interface LiveRunTrackerProps {
   route: Route;
@@ -69,17 +68,8 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
 
   const { position, error: geoError, isTracking, isAcquiring, startTracking, stopTracking } = useGeolocation();
 
-  // Garmin watch integration
-  const {
-    watchState,
-    connectToWatch,
-    disconnectWatch,
-    sendCourseToWatch,
-    setNavigationMode,
-    sendNavUpdate,
-    shouldSuppressPhoneNav,
-    isBluetoothAvailable: hasBluetooth,
-  } = useGarmin();
+  // Garmin watch integration — controls whether phone alerts are suppressed
+  const { garminState, setNavigationMode, shouldSuppressPhoneNav } = useGarmin();
 
   const [showGarminPanel, setShowGarminPanel] = useState(false);
 
@@ -230,19 +220,6 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
     }
   }, [position, runState]);
 
-  // Send navigation updates to Garmin watch when running
-  useEffect(() => {
-    if (runState !== 'running' || !watchState.isCourseLoaded) return;
-
-    sendNavUpdate({
-      progress: navState.progress,
-      currentInstruction: navState.currentInstruction,
-      distanceToNextTurn: navState.distanceToNextTurn,
-      nextInstruction: navState.nextInstruction,
-      isOffRoute: navState.isOffRoute,
-    });
-  }, [runState, navState, watchState.isCourseLoaded, sendNavUpdate]);
-
   useEffect(() => {
     if (runState === 'running') {
       timerRef.current = setInterval(() => {
@@ -323,18 +300,18 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
           </button>
 
           <div className="pointer-events-auto flex gap-2">
-            {hasBluetooth && (
+            {garminState.courseSentToGarmin && (
               <button
                 onClick={() => setShowGarminPanel(!showGarminPanel)}
                 className={`backdrop-blur-sm rounded-full p-2 shadow-lg transition-colors ${
-                  watchState.connectionStatus === 'connected'
+                  garminState.navigationMode === 'watch'
                     ? 'bg-green-500/90 hover:bg-green-500'
                     : 'bg-white/90 hover:bg-white'
                 }`}
-                title="Garmin Watch"
+                title="Garmin Watch Navigation"
               >
                 <Watch className={`h-5 w-5 ${
-                  watchState.connectionStatus === 'connected' ? 'text-white' : 'text-gray-700'
+                  garminState.navigationMode === 'watch' ? 'text-white' : 'text-gray-700'
                 }`} />
               </button>
             )}
@@ -362,30 +339,47 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
           </div>
         )}
 
-        {/* Garmin Watch panel (slides in from top-right) */}
-        {showGarminPanel && (
+        {/* Garmin navigation mode panel */}
+        {showGarminPanel && garminState.courseSentToGarmin && (
           <div className="absolute top-16 right-4 left-4 z-10">
-            <GarminWatchStatus
-              watchState={watchState}
-              onConnect={connectToWatch}
-              onDisconnect={disconnectWatch}
-              onSetNavMode={setNavigationMode}
-              isRunning={runState === 'running'}
-            />
+            <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Watch className="h-4 w-4 text-green-600" />
+                <p className="text-sm font-medium">Course sent to Garmin Connect</p>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                Choose where turn-by-turn directions are delivered:
+              </p>
+              <div className="flex gap-1.5">
+                {(['watch', 'phone', 'both'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setNavigationMode(mode)}
+                    className={`flex-1 px-2 py-2 rounded text-xs font-medium transition-colors ${
+                      garminState.navigationMode === mode
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {mode === 'watch' ? 'Watch Only' : mode === 'phone' ? 'Phone Only' : 'Both'}
+                  </button>
+                ))}
+              </div>
+              {garminState.navigationMode === 'watch' && (
+                <p className="text-xs text-green-600 mt-2">
+                  Phone voice/haptic alerts are off — your Garmin handles navigation
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>
 
       {/* Garmin watch navigation active indicator */}
       {shouldSuppressPhoneNav && runState === 'running' && (
-        <div className="px-4 py-2 bg-gray-800 text-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Watch className="h-4 w-4 text-green-400" />
-            <span className="text-xs">Directions on Garmin — phone alerts off</span>
-          </div>
-          <span className="text-xs font-medium tabular-nums text-green-400">
-            {Math.round(watchState.watchProgress * 100)}%
-          </span>
+        <div className="px-4 py-2 bg-gray-800 text-white flex items-center gap-2">
+          <Watch className="h-4 w-4 text-green-400" />
+          <span className="text-xs">Navigating on Garmin — phone alerts off</span>
         </div>
       )}
 

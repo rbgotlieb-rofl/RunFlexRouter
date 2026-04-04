@@ -1,360 +1,155 @@
 /**
- * Garmin Watch Communication Hook
+ * Garmin Watch Integration Hook
  *
- * Manages the connection to a Garmin watch via Connect IQ BLE protocol.
- * Handles course transfer, real-time navigation sync, and determines
- * whether phone-side navigation should be active or suppressed.
+ * Sends courses to a Garmin watch via Garmin Connect by:
+ * 1. Generating a GPX course file (server-side)
+ * 2. Saving it to device storage (Capacitor Filesystem)
+ * 3. Opening the native share sheet so the user can send it to Garmin Connect
+ *
+ * Garmin Connect then syncs the course to the paired watch, which uses its
+ * built-in course navigation to show the map, turn cues, and progress.
+ *
+ * Also manages the "navigate on watch" toggle that suppresses phone-side
+ * voice/haptic alerts when the runner is using their Garmin for directions.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  GarminConnectionStatus,
-  GarminDeviceInfo,
-  GarminNavigationMode,
-  GarminWatchState,
-  GarminCourseData,
-  Point,
-} from '@shared/schema';
+import { useState, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { GarminNavigationMode } from '@shared/schema';
+import { authFetch } from '@/lib/api';
 
-// Connect IQ BLE communication constants
-const GARMIN_CIQ_SERVICE_UUID = '6a4e3200-667b-11e3-949a-0800200c9a66';
-const GARMIN_CIQ_CHAR_UUID = '6a4e3201-667b-11e3-949a-0800200c9a66';
-const SCAN_TIMEOUT_MS = 15000;
-const POSITION_UPDATE_INTERVAL_MS = 2000;
-
-/**
- * Message types for phone↔watch BLE protocol.
- * The watch and phone exchange these JSON payloads over BLE.
- */
-type GarminMessageType =
-  | 'COURSE_TRANSFER'      // Phone → Watch: send course data
-  | 'NAV_UPDATE'           // Phone → Watch: updated navigation state
-  | 'POSITION_UPDATE'      // Watch → Phone: watch GPS position
-  | 'PROGRESS_UPDATE'      // Watch → Phone: current progress %
-  | 'NAV_MODE_ACK'         // Watch → Phone: confirms navigation started
-  | 'COURSE_ACK'           // Watch → Phone: confirms course received
-  | 'DISCONNECT';          // Either direction: clean disconnect
-
-interface GarminMessage {
-  type: GarminMessageType;
-  payload: any;
-  timestamp: number;
-}
-
-/**
- * Check if Web Bluetooth API is available (required for Connect IQ BLE).
- */
-function isBluetoothAvailable(): boolean {
-  return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+export interface GarminState {
+  /** Whether a course has been sent to Garmin Connect in this session */
+  courseSentToGarmin: boolean;
+  /** Whether the GPX is currently being generated/shared */
+  isSending: boolean;
+  /** Navigation mode: watch = suppress phone alerts */
+  navigationMode: GarminNavigationMode;
+  /** Error message if sharing failed */
+  error: string | null;
 }
 
 export function useGarmin() {
-  const [watchState, setWatchState] = useState<GarminWatchState>({
-    connectionStatus: 'disconnected',
-    device: null,
+  const [garminState, setGarminState] = useState<GarminState>({
+    courseSentToGarmin: false,
+    isSending: false,
     navigationMode: 'phone',
-    isCourseLoaded: false,
-    watchProgress: 0,
-    watchPosition: null,
+    error: null,
   });
 
-  const bleDeviceRef = useRef<BluetoothDevice | null>(null);
-  const bleCharRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
-  const positionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const courseDataRef = useRef<GarminCourseData | null>(null);
-
   /**
-   * Scan for and connect to a Garmin Connect IQ device via BLE.
+   * Generate a GPX course file and share it to Garmin Connect.
+   *
+   * On native (Capacitor): saves the file and opens the share sheet,
+   * where the user picks Garmin Connect to import the course.
+   *
+   * On web: downloads the GPX file, which the user can then drag into
+   * Garmin Connect web or import via the mobile app.
    */
-  const connectToWatch = useCallback(async (): Promise<boolean> => {
-    if (!isBluetoothAvailable()) {
-      console.warn('Web Bluetooth not available');
-      setWatchState((s) => ({ ...s, connectionStatus: 'error' }));
-      return false;
-    }
-
-    setWatchState((s) => ({ ...s, connectionStatus: 'connecting' }));
+  const sendToGarmin = useCallback(async (route: {
+    id?: number;
+    name: string;
+    distance: number;
+    routePath: any;
+    directions: any;
+  }): Promise<boolean> => {
+    setGarminState((s) => ({ ...s, isSending: true, error: null }));
 
     try {
-      // Request a BLE device with the Connect IQ service
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [
-          { services: [GARMIN_CIQ_SERVICE_UUID] },
-          { namePrefix: 'Garmin' },
-          { namePrefix: 'Forerunner' },
-          { namePrefix: 'fenix' },
-          { namePrefix: 'Venu' },
-          { namePrefix: 'Enduro' },
-        ],
-        optionalServices: [GARMIN_CIQ_SERVICE_UUID],
+      // 1. Fetch GPX from server
+      const gpxResponse = await authFetch('/api/garmin/course/gpx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: route.name,
+          distance: route.distance,
+          routePath: route.routePath,
+          directions: route.directions,
+        }),
       });
 
-      if (!device) {
-        setWatchState((s) => ({ ...s, connectionStatus: 'disconnected' }));
+      if (!gpxResponse.ok) {
+        throw new Error('Failed to generate GPX course');
+      }
+
+      const gpxContent = await gpxResponse.text();
+      const cleanName = route.name.replace(/\s*\([0-9.]+km\)/i, '').replace(/[^a-zA-Z0-9_ -]/g, '');
+      const fileName = `${cleanName}.gpx`;
+
+      if (Capacitor.isNativePlatform()) {
+        // Native: save to cache dir and share via native share sheet
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        const { Share } = await import('@capacitor/share');
+
+        // Write GPX file to cache directory
+        const writeResult = await Filesystem.writeFile({
+          path: fileName,
+          data: gpxContent,
+          directory: Directory.Cache,
+        });
+
+        // Share the file — opens the native share sheet
+        // User picks "Garmin Connect" to import as a course
+        await Share.share({
+          title: `${cleanName} — RunFlex Course`,
+          text: `Import this course into Garmin Connect to navigate on your watch`,
+          url: writeResult.uri,
+          dialogTitle: 'Send course to Garmin Connect',
+        });
+      } else {
+        // Web fallback: download the GPX file
+        const blob = new Blob([gpxContent], { type: 'application/gpx+xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      setGarminState((s) => ({
+        ...s,
+        isSending: false,
+        courseSentToGarmin: true,
+      }));
+      return true;
+    } catch (err: any) {
+      // Share cancelled by user is not an error
+      if (err?.message?.includes('cancelled') || err?.message?.includes('canceled')) {
+        setGarminState((s) => ({ ...s, isSending: false }));
         return false;
       }
 
-      bleDeviceRef.current = device;
-
-      // Listen for disconnection
-      device.addEventListener('gattserverdisconnected', handleDisconnect);
-
-      // Connect to GATT server
-      const server = await device.gatt!.connect();
-      const service = await server.getPrimaryService(GARMIN_CIQ_SERVICE_UUID);
-      const characteristic = await service.getCharacteristic(GARMIN_CIQ_CHAR_UUID);
-      bleCharRef.current = characteristic;
-
-      // Start notifications for watch→phone messages
-      await characteristic.startNotifications();
-      characteristic.addEventListener('characteristicvaluechanged', handleWatchMessage);
-
-      // Build device info from the BLE device name
-      const deviceInfo: GarminDeviceInfo = {
-        deviceId: device.id || 'unknown',
-        deviceName: device.name || 'Garmin Watch',
-        modelName: extractModelName(device.name || ''),
-        firmwareVersion: 'N/A',
-        batteryLevel: -1,
-      };
-
-      setWatchState((s) => ({
+      console.error('Garmin share error:', err);
+      setGarminState((s) => ({
         ...s,
-        connectionStatus: 'connected',
-        device: deviceInfo,
-      }));
-
-      return true;
-    } catch (err: any) {
-      // User cancelled the picker or connection failed
-      console.error('Garmin BLE connection error:', err);
-      setWatchState((s) => ({
-        ...s,
-        connectionStatus: err.name === 'NotFoundError' ? 'disconnected' : 'error',
+        isSending: false,
+        error: err.message || 'Failed to send course to Garmin',
       }));
       return false;
     }
   }, []);
 
   /**
-   * Disconnect from the Garmin watch.
-   */
-  const disconnectWatch = useCallback(() => {
-    if (positionIntervalRef.current) {
-      clearInterval(positionIntervalRef.current);
-      positionIntervalRef.current = null;
-    }
-
-    if (bleCharRef.current) {
-      try { bleCharRef.current.removeEventListener('characteristicvaluechanged', handleWatchMessage); } catch {}
-      bleCharRef.current = null;
-    }
-
-    if (bleDeviceRef.current?.gatt?.connected) {
-      try { bleDeviceRef.current.gatt.disconnect(); } catch {}
-    }
-    bleDeviceRef.current = null;
-    courseDataRef.current = null;
-
-    setWatchState({
-      connectionStatus: 'disconnected',
-      device: null,
-      navigationMode: 'phone',
-      isCourseLoaded: false,
-      watchProgress: 0,
-      watchPosition: null,
-    });
-  }, []);
-
-  /**
-   * Send a course to the connected Garmin watch.
-   */
-  const sendCourseToWatch = useCallback(async (courseData: GarminCourseData): Promise<boolean> => {
-    if (!bleCharRef.current || watchState.connectionStatus !== 'connected') {
-      return false;
-    }
-
-    setWatchState((s) => ({ ...s, connectionStatus: 'syncing' }));
-    courseDataRef.current = courseData;
-
-    try {
-      const message: GarminMessage = {
-        type: 'COURSE_TRANSFER',
-        payload: courseData,
-        timestamp: Date.now(),
-      };
-
-      // Chunk the data for BLE transfer (max 512 bytes per write)
-      const jsonStr = JSON.stringify(message);
-      const chunks = chunkString(jsonStr, 480);
-
-      for (let i = 0; i < chunks.length; i++) {
-        const header = new Uint8Array([i, chunks.length]); // chunk index, total chunks
-        const body = new TextEncoder().encode(chunks[i]);
-        const packet = new Uint8Array(header.length + body.length);
-        packet.set(header);
-        packet.set(body, header.length);
-
-        await bleCharRef.current.writeValue(packet);
-      }
-
-      setWatchState((s) => ({
-        ...s,
-        connectionStatus: 'connected',
-        isCourseLoaded: true,
-      }));
-
-      return true;
-    } catch (err) {
-      console.error('Error sending course to watch:', err);
-      setWatchState((s) => ({ ...s, connectionStatus: 'error' }));
-      return false;
-    }
-  }, [watchState.connectionStatus]);
-
-  /**
-   * Switch navigation mode. When set to 'watch', phone-side voice/haptic
-   * alerts are suppressed to avoid duplicate instructions.
+   * Set the navigation mode.
+   * 'watch'  = phone alerts suppressed (user is navigating on Garmin)
+   * 'phone'  = normal phone navigation
+   * 'both'   = alerts on both devices
    */
   const setNavigationMode = useCallback((mode: GarminNavigationMode) => {
-    setWatchState((s) => ({ ...s, navigationMode: mode }));
-
-    // Notify the watch of the mode change
-    if (bleCharRef.current && watchState.connectionStatus === 'connected') {
-      const message: GarminMessage = {
-        type: 'NAV_UPDATE',
-        payload: { navigationMode: mode },
-        timestamp: Date.now(),
-      };
-      const encoded = new TextEncoder().encode(JSON.stringify(message));
-      bleCharRef.current.writeValue(encoded).catch(() => {});
-    }
-  }, [watchState.connectionStatus]);
-
-  /**
-   * Send a navigation state update to the watch (position, progress, next turn).
-   */
-  const sendNavUpdate = useCallback(
-    async (navData: {
-      progress: number;
-      currentInstruction: string;
-      distanceToNextTurn: number | null;
-      nextInstruction: string | null;
-      isOffRoute: boolean;
-    }) => {
-      if (
-        !bleCharRef.current ||
-        watchState.connectionStatus !== 'connected' ||
-        watchState.navigationMode === 'phone'
-      ) {
-        return;
-      }
-
-      try {
-        const message: GarminMessage = {
-          type: 'NAV_UPDATE',
-          payload: navData,
-          timestamp: Date.now(),
-        };
-        const encoded = new TextEncoder().encode(JSON.stringify(message));
-        await bleCharRef.current.writeValue(encoded);
-      } catch {}
-    },
-    [watchState.connectionStatus, watchState.navigationMode]
-  );
-
-  /** Handle incoming BLE messages from the watch. */
-  const handleWatchMessage = useCallback((event: Event) => {
-    try {
-      const target = event.target as unknown as BluetoothRemoteGATTCharacteristic;
-      const value = target.value;
-      if (!value) return;
-
-      const decoder = new TextDecoder();
-      const json = decoder.decode(value.buffer);
-      const message: GarminMessage = JSON.parse(json);
-
-      switch (message.type) {
-        case 'POSITION_UPDATE':
-          setWatchState((s) => ({
-            ...s,
-            watchPosition: message.payload.position as Point,
-          }));
-          break;
-        case 'PROGRESS_UPDATE':
-          setWatchState((s) => ({
-            ...s,
-            watchProgress: message.payload.progress as number,
-          }));
-          break;
-        case 'COURSE_ACK':
-          setWatchState((s) => ({ ...s, isCourseLoaded: true }));
-          break;
-        case 'NAV_MODE_ACK':
-          // Watch confirmed it's handling navigation
-          setWatchState((s) => ({ ...s, navigationMode: 'watch' }));
-          break;
-        case 'DISCONNECT':
-          disconnectWatch();
-          break;
-      }
-    } catch (err) {
-      console.error('Error parsing watch message:', err);
-    }
-  }, [disconnectWatch]);
-
-  /** Handle BLE disconnection event. */
-  const handleDisconnect = useCallback(() => {
-    setWatchState((s) => ({
-      ...s,
-      connectionStatus: 'disconnected',
-      device: null,
-      navigationMode: 'phone',
-      isCourseLoaded: false,
-    }));
-    bleCharRef.current = null;
+    setGarminState((s) => ({ ...s, navigationMode: mode }));
   }, []);
 
   /** Whether phone navigation alerts should be suppressed. */
-  const shouldSuppressPhoneNav = watchState.navigationMode === 'watch' && watchState.isCourseLoaded;
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      disconnectWatch();
-    };
-  }, [disconnectWatch]);
+  const shouldSuppressPhoneNav =
+    garminState.navigationMode === 'watch' && garminState.courseSentToGarmin;
 
   return {
-    watchState,
-    connectToWatch,
-    disconnectWatch,
-    sendCourseToWatch,
+    garminState,
+    sendToGarmin,
     setNavigationMode,
-    sendNavUpdate,
     shouldSuppressPhoneNav,
-    isBluetoothAvailable: isBluetoothAvailable(),
   };
-}
-
-/** Extract a friendly model name from a BLE device name. */
-function extractModelName(name: string): string {
-  const models = [
-    'Forerunner 965', 'Forerunner 955', 'Forerunner 265', 'Forerunner 255',
-    'Forerunner 165', 'Forerunner 55', 'fenix 8', 'fenix 7', 'fenix 6',
-    'Enduro 3', 'Enduro 2', 'Venu 3', 'Venu 2',
-  ];
-  for (const model of models) {
-    if (name.toLowerCase().includes(model.toLowerCase())) return model;
-  }
-  return name;
-}
-
-/** Split a string into chunks of the given size. */
-function chunkString(str: string, size: number): string[] {
-  const chunks: string[] = [];
-  for (let i = 0; i < str.length; i += size) {
-    chunks.push(str.slice(i, i + size));
-  }
-  return chunks;
 }
