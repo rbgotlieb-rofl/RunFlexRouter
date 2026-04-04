@@ -13,7 +13,10 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.activityType = .fitness
-        manager.allowsBackgroundLocationUpdates = true
+        // Background location updates require the entitlement to be set in Xcode:
+        // Target → Signing & Capabilities → + Background Modes → Location Updates
+        // Uncomment the line below once the entitlement is configured:
+        // manager.allowsBackgroundLocationUpdates = true
     }
 
     func requestAuthorization() {
