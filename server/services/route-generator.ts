@@ -43,7 +43,8 @@ async function fetchRoutePathWithWaypoints(startPoint: Point, endPoint: Point, w
       geometries: 'geojson',
       steps: 'true',
       alternatives: 'false', // We don't need alternatives for waypoints
-      overview: 'full'
+      overview: 'full',
+      annotations: 'congestion'
     });
     
     const url = `https://api.mapbox.com/directions/v5/mapbox/${routePreference}/${coordString}?${params.toString()}`;
@@ -968,7 +969,7 @@ export async function generateRoutes(startPointStr: string, endPointStr: string,
 }
 
 // Function to fetch a route from Mapbox Directions API
-async function fetchMapboxRoute(startPoint: Point, endPoint: Point, routePreference: string = 'walking'): Promise<{path: Point[], distance: number, duration: number, directions: DirectionStep[]} | null> {
+async function fetchMapboxRoute(startPoint: Point, endPoint: Point, routePreference: string = 'walking'): Promise<{path: Point[], distance: number, duration: number, directions: DirectionStep[], congestion: string[]} | null> {
   try {
     console.log(`Fetching Mapbox route from (${startPoint.lat},${startPoint.lng}) to (${endPoint.lat},${endPoint.lng})`);
     
@@ -1000,7 +1001,8 @@ async function fetchMapboxRoute(startPoint: Point, endPoint: Point, routePrefere
       geometries: 'geojson',
       steps: 'true',
       alternatives: 'true', // Get alternative routes if available
-      overview: 'full'
+      overview: 'full',
+      annotations: 'congestion'
     });
     
     const url = `https://api.mapbox.com/directions/v5/mapbox/${routePreference}/${coordString}?${params.toString()}`;
@@ -1117,12 +1119,21 @@ async function fetchMapboxRoute(startPoint: Point, endPoint: Point, routePrefere
     }
     
     console.log(`Extracted ${directions.length} direction steps from route`);
-    
+
+    // Extract congestion annotations for traffic analysis
+    const congestion: string[] = [];
+    for (const leg of (route.legs || [])) {
+      if (leg.annotation?.congestion) {
+        congestion.push(...leg.annotation.congestion);
+      }
+    }
+
     return {
       path,
       distance,
       duration,
-      directions
+      directions,
+      congestion
     };
   } catch (error) {
     console.error("Error fetching from Mapbox Directions API:", error);
@@ -2224,17 +2235,19 @@ async function createDurationBasedRoutes(
                 'any',
                 directRoute.directions,
                 startStreetName,
-                endStreetName
+                endStreetName,
+                directRoute.congestion
               );
-              
+
               const startLocationName = startStreetName || getReadableLocationName(startPointStr);
               const endLocationName = endStreetName || getReadableLocationName(endPointStr);
               durationBasedRoute.name = `${startLocationName} to ${endLocationName} (Timed)`;
               durationBasedRoute.description = `A ${targetDuration}-minute run from ${startLocationName} to ${endLocationName}`;
-              
-              // Initialize and set features array
+
+              // Initialize and set features array based on real traffic data
               const duFeatures: RouteFeature[] = [];
-              if (i % 4 === 0) duFeatures.push('low_traffic');
+              const duTraffic = analyzeRouteCongestion(directRoute.congestion || []);
+              duFeatures.push(duTraffic.trafficFeature);
               if (i % 3 === 0) duFeatures.push('scenic');
               if (i % 5 === 0) duFeatures.push('open_view');
               durationBasedRoute.features = duFeatures;
@@ -2436,7 +2449,8 @@ async function createNewRoutes(
     "urban", // Default type
     directRoute.directions, // Pass the directions we got from Mapbox
     startStreetName, // Add street name for directions
-    endStreetName
+    endStreetName,
+    directRoute.congestion // Real traffic data from Mapbox
   );
   
   routes.push(directRouteObj);
@@ -2475,6 +2489,7 @@ async function createNewRoutes(
         const distance = leg1.distance + leg2.distance;
         const duration = leg1.duration + leg2.duration;
         const directions = [...(leg1.directions || []), ...(leg2.directions || [])];
+        const combinedCongestion = [...(leg1.congestion || []), ...(leg2.congestion || [])];
         const routeType = routeTypes[i % routeTypes.length];
 
         console.log(`Created Mapbox alternative route #${i + 2} with distance ${distance.toFixed(2)}km (${routePath.length} waypoints)`);
@@ -2489,7 +2504,8 @@ async function createNewRoutes(
           routeType,
           directions,
           startStreetName,
-          endStreetName
+          endStreetName,
+          combinedCongestion
         );
 
         routes.push(route);
@@ -2505,6 +2521,34 @@ async function createNewRoutes(
   return routes;
 }
 
+// Analyze congestion annotations from Mapbox to determine real traffic level
+function analyzeRouteCongestion(
+  congestion: string[]
+): { trafficLevel: number; trafficFeature: 'low_traffic' | 'medium_traffic' | 'high_traffic' } {
+  if (!congestion || congestion.length === 0) {
+    return { trafficLevel: 2, trafficFeature: 'medium_traffic' };
+  }
+
+  let low = 0, moderate = 0, heavy = 0, severe = 0, known = 0;
+  for (const level of congestion) {
+    switch (level) {
+      case 'low': low++; known++; break;
+      case 'moderate': moderate++; known++; break;
+      case 'heavy': heavy++; known++; break;
+      case 'severe': severe++; known++; break;
+    }
+  }
+
+  if (known === 0) return { trafficLevel: 2, trafficFeature: 'medium_traffic' };
+
+  const heavyPct = (heavy + severe) / known;
+  const moderatePct = moderate / known;
+
+  if (heavyPct >= 0.25) return { trafficLevel: 3, trafficFeature: 'high_traffic' };
+  if (moderatePct >= 0.40 || heavyPct >= 0.10) return { trafficLevel: 2, trafficFeature: 'medium_traffic' };
+  return { trafficLevel: 1, trafficFeature: 'low_traffic' };
+}
+
 // Helper function to create a complete route object
 function createRouteObject(
   id: number,
@@ -2516,14 +2560,15 @@ function createRouteObject(
   routeType: RouteType,
   directions: DirectionStep[] = [],
   startStreetName?: string | null,
-  endStreetName?: string | null
+  endStreetName?: string | null,
+  congestion?: string[]
 ): Route {
   // Initialize an empty features array that we'll populate later
   const routeFeatures: RouteFeature[] = [];
-  // Determine scenery and traffic ratings based on route type
+  // Determine scenery and traffic ratings based on route type (defaults)
   let sceneryRating, trafficLevel;
   let features: RouteFeature[] = [];
-  
+
   switch (routeType) {
     case "park":
       sceneryRating = 3; // High
@@ -2544,6 +2589,15 @@ function createRouteObject(
       sceneryRating = 2;
       trafficLevel = 2;
       features = ["medium_traffic"];
+  }
+
+  // Override hardcoded traffic with real congestion data from Mapbox API
+  if (congestion && congestion.length > 0) {
+    const realTraffic = analyzeRouteCongestion(congestion);
+    trafficLevel = realTraffic.trafficLevel;
+    // Replace the traffic feature with the real one
+    features = features.filter(f => f !== 'low_traffic' && f !== 'medium_traffic' && f !== 'high_traffic');
+    features.push(realTraffic.trafficFeature);
   }
   
   // Update directions with the specific street names if provided

@@ -248,6 +248,100 @@ async function resolveStartPoint(req: any): Promise<{ lat: number; lng: number }
 }
 
 /**
+ * Analyze congestion annotations from Mapbox Directions API to determine
+ * actual traffic level. Mapbox returns per-segment congestion values:
+ * "unknown", "low", "moderate", "heavy", "severe".
+ *
+ * Returns { trafficLevel: 1|2|3, trafficFeature: string }
+ *   1 = low traffic, 2 = medium, 3 = high
+ */
+function analyzeTrafficCongestion(
+  congestion: string[]
+): { trafficLevel: number; trafficFeature: 'low_traffic' | 'medium_traffic' | 'high_traffic' } {
+  if (!congestion || congestion.length === 0) {
+    return { trafficLevel: 2, trafficFeature: 'medium_traffic' };
+  }
+
+  // Count segments by congestion level (ignore "unknown")
+  let low = 0;
+  let moderate = 0;
+  let heavy = 0;
+  let severe = 0;
+  let known = 0;
+
+  for (const level of congestion) {
+    switch (level) {
+      case 'low':
+        low++;
+        known++;
+        break;
+      case 'moderate':
+        moderate++;
+        known++;
+        break;
+      case 'heavy':
+        heavy++;
+        known++;
+        break;
+      case 'severe':
+        severe++;
+        known++;
+        break;
+      // "unknown" segments are skipped
+    }
+  }
+
+  // If no known congestion data, fall back to medium
+  if (known === 0) {
+    return { trafficLevel: 2, trafficFeature: 'medium_traffic' };
+  }
+
+  const heavyPct = (heavy + severe) / known;
+  const moderatePct = moderate / known;
+
+  // High traffic: ≥25% of known segments are heavy/severe
+  if (heavyPct >= 0.25) {
+    return { trafficLevel: 3, trafficFeature: 'high_traffic' };
+  }
+  // Medium traffic: ≥40% moderate or ≥10% heavy/severe
+  if (moderatePct >= 0.40 || heavyPct >= 0.10) {
+    return { trafficLevel: 2, trafficFeature: 'medium_traffic' };
+  }
+  // Low traffic
+  return { trafficLevel: 1, trafficFeature: 'low_traffic' };
+}
+
+/**
+ * Extract congestion annotations from Mapbox Directions API legs.
+ */
+function extractCongestion(legs: any[]): string[] {
+  if (!legs || !Array.isArray(legs)) return [];
+  const congestion: string[] = [];
+  for (const leg of legs) {
+    if (leg.annotation?.congestion) {
+      congestion.push(...leg.annotation.congestion);
+    }
+  }
+  return congestion;
+}
+
+/**
+ * Apply traffic analysis to a route object, updating trafficLevel and features.
+ */
+function applyTrafficData(route: any, congestion: string[]): void {
+  const { trafficLevel, trafficFeature } = analyzeTrafficCongestion(congestion);
+  route.trafficLevel = trafficLevel;
+
+  // Remove old traffic features and add the real one
+  if (Array.isArray(route.features)) {
+    route.features = route.features.filter(
+      (f: string) => f !== 'low_traffic' && f !== 'medium_traffic' && f !== 'high_traffic'
+    );
+    route.features.push(trafficFeature);
+  }
+}
+
+/**
  * Classify a route's surface type from Mapbox Directions step data.
  * Analyzes step names and distance to determine road vs trail vs mixed.
  */
@@ -687,10 +781,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const estimateRunningMins = (distKm: number) => Math.round(distKm * RUNNING_PACE_MIN_PER_KM);
       const walkingToRunningMins = (walkingSeconds: number) => Math.round((walkingSeconds / 60) * WALK_TO_RUN_FACTOR);
 
-      // Shared helper: fetch walking route with step data for surface classification
-      async function fetchMapboxWalkingWithSteps(coords: [number, number][]): Promise<{ geometry: any; distance: number; duration: number; steps?: any[] } | null> {
+      // Shared helper: fetch walking route with step data for surface classification and congestion annotations for traffic analysis
+      async function fetchMapboxWalkingWithSteps(coords: [number, number][]): Promise<{ geometry: any; distance: number; duration: number; steps?: any[]; congestion?: string[] } | null> {
         const coordStr = coords.map(([lng, lat]) => `${lng},${lat}`).join(";");
-        const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${coordStr}.json?geometries=geojson&overview=full&steps=true&access_token=${encodeURIComponent(mapboxToken)}`;
+        const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${coordStr}.json?geometries=geojson&overview=full&steps=true&annotations=congestion&access_token=${encodeURIComponent(mapboxToken)}`;
         try {
           const res2 = await fetch(url);
           if (!res2.ok) return null;
@@ -703,7 +797,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               steps.push(step);
             }
           }
-          return { geometry: route.geometry, distance: route.distance, duration: route.duration, steps };
+          const congestion = extractCongestion(route.legs || []);
+          return { geometry: route.geometry, distance: route.distance, duration: route.duration, steps, congestion };
         } catch { return null; }
       }
 
@@ -876,7 +971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const validLoops = filterValidRoutes(result, baseKm, targetType, effectiveTargetDuration, surfaceType, requiredFeatures);
 
-          // Classify surface type for each loop
+          // Classify surface type and traffic level for each loop
           await Promise.all(validLoops.map(async (l: any) => {
             try {
               const path = l.routePath;
@@ -890,6 +985,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const walkResult = await fetchMapboxWalkingWithSteps(pts);
               if (walkResult?.steps) {
                 l.surfaceType = classifySurfaceType(walkResult.steps);
+              }
+              if (walkResult?.congestion) {
+                applyTrafficData(l, walkResult.congestion);
               }
             } catch {}
           }));
@@ -914,9 +1012,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const hasEnd = !!endPoint;
         const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN || "";
 
-        async function fetchMapboxWalking(coords: [number, number][]): Promise<{ geometry: any; distance: number; duration: number; steps?: any[] } | null> {
+        async function fetchMapboxWalking(coords: [number, number][]): Promise<{ geometry: any; distance: number; duration: number; steps?: any[]; congestion?: string[] } | null> {
           const coordStr = coords.map(([lng, lat]) => `${lng},${lat}`).join(";");
-          const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${coordStr}.json?geometries=geojson&overview=full&steps=true&access_token=${encodeURIComponent(mapboxToken)}`;
+          const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${coordStr}.json?geometries=geojson&overview=full&steps=true&annotations=congestion&access_token=${encodeURIComponent(mapboxToken)}`;
           try {
             const res2 = await fetch(url);
             if (!res2.ok) return null;
@@ -930,7 +1028,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 steps.push(step);
               }
             }
-            return { geometry: route.geometry, distance: route.distance, duration: route.duration, steps };
+            const congestion = extractCongestion(route.legs || []);
+            return { geometry: route.geometry, distance: route.distance, duration: route.duration, steps, congestion };
           } catch { return null; }
         }
 
@@ -1041,7 +1140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .sort((a, b) => (b._loopScore ?? 0) - (a._loopScore ?? 0))
           .slice(0, 4);
 
-          // Classify surface type for each loop using sampled waypoints
+          // Classify surface type and traffic level for each loop using sampled waypoints
           await Promise.all(loopRoutes.map(async (l: any) => {
             try {
               const path = l.routePath;
@@ -1056,6 +1155,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const result = await fetchMapboxWalking(pts);
               if (result?.steps) {
                 l.surfaceType = classifySurfaceType(result.steps);
+              }
+              if (result?.congestion) {
+                applyTrafficData(l, result.congestion);
               }
             } catch {}
           }));
@@ -1103,6 +1205,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Classify surface from actual Mapbox step data
               const allSteps = [...(outbound.steps || []), ...(returnLeg.steps || [])];
               const detectedSurface = classifySurfaceType(allSteps);
+              // Analyze traffic from real congestion data
+              const allCongestion = [...(outbound.congestion || []), ...(returnLeg.congestion || [])];
+              const traffic = analyzeTrafficCongestion(allCongestion);
               return {
                 id: 0,
                 name: `Out & Back (${totalDist.toFixed(1)} km • ${totalDur} min)`,
@@ -1111,13 +1216,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 elevationGain: Math.round(totalDist * 8),
                 routePath, routeType: 'out_and_back',
                 surfaceType: detectedSurface,
-                sceneryRating: 3, trafficLevel: 2,
+                sceneryRating: 3, trafficLevel: traffic.trafficLevel,
                 directions: [
                   { instruction: `Head out from your starting point.`, distance: 0.1, duration: 0.5 },
                   { instruction: `Continue to the turnaround point at ${(totalDist / 2).toFixed(1)}km.`, distance: totalDist / 2, duration: totalDur / 2 },
                   { instruction: `Turn around and retrace your steps back to start.`, distance: totalDist, duration: totalDur },
                 ],
-                features: ['out_and_back'] as string[],
+                features: ['out_and_back', traffic.trafficFeature] as string[],
               };
             })
           ).then(r => r.filter((x): x is NonNullable<typeof x> => x !== null));
@@ -1156,6 +1261,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // (runners will be running through the green space, not just on roads to reach it)
               const poiSurface = isGreenSpace ? 'trail' as const : detectedPoiSurface;
 
+              // Analyze real traffic data from congestion annotations
+              const poiTraffic = analyzeTrafficCongestion(route.congestion || []);
+              poiFeatures.push(poiTraffic.trafficFeature);
+
               return {
                 id: 0,
                 name: `Run to ${poi.name} (${km.toFixed(1)} km • ${mins} min)`,
@@ -1165,7 +1274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 routePath, routeType: 'a_to_b',
                 surfaceType: poiSurface,
                 sceneryRating: isGreenSpace ? 4 : 2,
-                trafficLevel: isGreenSpace ? 1 : 2,
+                trafficLevel: poiTraffic.trafficLevel,
                 directions: [
                   { instruction: `Head towards ${poi.name}.`, distance: 0.1, duration: 0.5 },
                   { instruction: `Continue along the route to ${poi.name}.`, distance: km / 2, duration: mins / 2 },
