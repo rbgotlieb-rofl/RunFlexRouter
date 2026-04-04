@@ -30,9 +30,7 @@ struct RouteReadyView: View {
         ScrollView {
             VStack(spacing: 12) {
                 // Route preview map
-                Map(coordinateRegion: .constant(region), annotationItems: []) { _ in
-                    MapPin(coordinate: .init())
-                }
+                Map(coordinateRegion: .constant(region))
                 .overlay(RoutePolylineOverlay(path: route.routePath))
                 .frame(height: 120)
                 .cornerRadius(12)

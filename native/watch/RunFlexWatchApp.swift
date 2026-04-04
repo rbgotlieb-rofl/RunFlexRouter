@@ -82,12 +82,12 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: sessionManager.receivedRoute) { route in
+        .onChange(of: sessionManager.receivedRoute) { _, route in
             if route != nil && runPhase == .waiting {
                 runPhase = .ready
             }
         }
-        .onChange(of: workoutManager.workoutState) { state in
+        .onChange(of: workoutManager.workoutState) { _, state in
             if state == .finished {
                 navigationManager?.stopNavigating()
                 runPhase = .finished

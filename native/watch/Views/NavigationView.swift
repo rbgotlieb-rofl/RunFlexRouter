@@ -197,7 +197,7 @@ struct RouteMapView: View {
     var body: some View {
         Map(coordinateRegion: $region, showsUserLocation: true)
             .onAppear { updateRegion() }
-            .onChange(of: userLocation?.latitude) { _ in updateRegion() }
+            .onChange(of: userLocation?.latitude) { _, _ in updateRegion() }
     }
 
     private func updateRegion() {
