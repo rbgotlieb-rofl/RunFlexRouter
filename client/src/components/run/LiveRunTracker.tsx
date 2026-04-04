@@ -3,7 +3,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Route, Point } from '@shared/schema';
 import { useGeolocation, GeoPosition } from '@/hooks/use-geolocation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { authFetch } from '@/lib/api';
 import { addArrowLayer, addFlagLayers } from '@/lib/route-arrows';
 import {
   Play, Pause, Square, X, Navigation, Clock, Footprints, Gauge, ChevronUp, ChevronDown,
@@ -66,6 +67,23 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
   const positionsRef = useRef<GeoPosition[]>([]);
 
   const { position, error: geoError, isTracking, isAcquiring, startTracking, stopTracking } = useGeolocation();
+
+  const queryClient = useQueryClient();
+  const saveRunMutation = useMutation({
+    mutationFn: async (runData: { routeId?: number; distanceKm: number; durationSeconds: number; paceMinPerKm: number | null }) => {
+      const resp = await authFetch('/api/runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(runData),
+      });
+      if (!resp.ok) return null; // silently fail for unauthenticated users
+      return resp.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/runs/pace'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/runs'] });
+    },
+  });
 
   // Turn-by-turn navigation
   const navState = useNavigation(route, position, runState === 'running');
@@ -263,6 +281,16 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
     const pace = dist > 0.05 ? (elapsed / 60) / dist : null;
     setStats({ distanceKm: dist, elapsedSeconds: elapsed, paceMinPerKm: pace, positions: positionsRef.current });
     setRunState('finished');
+
+    // Save completed run to build personalised pace profile
+    if (dist >= 0.1) {
+      saveRunMutation.mutate({
+        routeId: route.id,
+        distanceKm: dist,
+        durationSeconds: elapsed,
+        paceMinPerKm: pace,
+      });
+    }
   };
 
   const handleClose = () => {

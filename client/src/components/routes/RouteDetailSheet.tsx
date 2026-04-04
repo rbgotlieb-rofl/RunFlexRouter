@@ -197,6 +197,11 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
                     ? `${Math.floor(route.estimatedTime / 60)}h ${route.estimatedTime % 60}m`
                     : `${route.estimatedTime || 0}m`}
                 </p>
+                {route.isPersonalisedEstimate && (
+                  <p className="text-[10px] text-blue-600 font-medium mt-0.5">
+                    Based on your {route.userPaceMinPerKm} min/km pace
+                  </p>
+                )}
               </div>
             </div>
 

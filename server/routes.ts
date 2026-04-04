@@ -680,10 +680,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Running pace: 5 min/km. Mapbox returns walking durations (~12 min/km).
-      // Convert walking time to running time: multiply by 5/12 ≈ 0.42
-      const RUNNING_PACE_MIN_PER_KM = 5;
-      const WALK_TO_RUN_FACTOR = 0.42;
+      // Running pace: default 5 min/km, personalised from user's run history if available.
+      // Mapbox returns walking durations (~12 min/km).
+      const DEFAULT_PACE_MIN_PER_KM = 5;
+      let RUNNING_PACE_MIN_PER_KM = DEFAULT_PACE_MIN_PER_KM;
+      let isPersonalisedPace = false;
+
+      if (req.isAuthenticated()) {
+        try {
+          const userPace = await storage.getUserAveragePace(req.user!.id);
+          if (userPace !== null) {
+            RUNNING_PACE_MIN_PER_KM = userPace;
+            isPersonalisedPace = true;
+          }
+        } catch {}
+      }
+
+      const WALK_TO_RUN_FACTOR = RUNNING_PACE_MIN_PER_KM / 12;
       const estimateRunningMins = (distKm: number) => Math.round(distKm * RUNNING_PACE_MIN_PER_KM);
       const walkingToRunningMins = (walkingSeconds: number) => Math.round((walkingSeconds / 60) * WALK_TO_RUN_FACTOR);
 
@@ -1357,11 +1370,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
-      // Fix estimated times: generateRoutes uses Mapbox walking duration (~12 min/km)
-      // but we need running pace (5 min/km)
+      // Fix estimated times using personalised or default running pace
       routes.forEach((r: any) => {
         if (r.distance > 0) {
           r.estimatedTime = estimateRunningMins(r.distance);
+          r.isPersonalisedEstimate = isPersonalisedPace;
+          if (isPersonalisedPace) {
+            r.userPaceMinPerKm = Math.round(RUNNING_PACE_MIN_PER_KM * 10) / 10;
+          }
         }
       });
 
@@ -1589,6 +1605,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Reverse geocode error:", error);
       res.json({ name: null });
+    }
+  });
+
+  // --- Run history & personalised pace ---
+
+  // POST /api/runs — save a completed run
+  app.post("/api/runs", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const { routeId, distanceKm, durationSeconds, paceMinPerKm } = req.body;
+      if (distanceKm == null || durationSeconds == null) {
+        return res.status(400).json({ message: "distanceKm and durationSeconds are required" });
+      }
+      const entry = await storage.saveRunHistory({
+        userId: req.user!.id,
+        routeId: routeId ?? null,
+        distanceKm,
+        durationSeconds,
+        paceMinPerKm: paceMinPerKm ?? (distanceKm > 0 ? (durationSeconds / 60) / distanceKm : null),
+      });
+      return res.status(201).json(entry);
+    } catch (error) {
+      console.error("Error saving run:", error);
+      return res.status(500).json({ message: "Error saving run" });
+    }
+  });
+
+  // GET /api/runs — get user's run history
+  app.get("/api/runs", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const runs = await storage.getRunHistoryByUserId(req.user!.id);
+      return res.json(runs);
+    } catch (error) {
+      console.error("Error fetching runs:", error);
+      return res.status(500).json({ message: "Error fetching runs" });
+    }
+  });
+
+  // GET /api/runs/pace — get user's personalised average pace
+  app.get("/api/runs/pace", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.json({ pace: null, isPersonalised: false });
+      }
+      const pace = await storage.getUserAveragePace(req.user!.id);
+      return res.json({ pace, isPersonalised: pace !== null });
+    } catch (error) {
+      console.error("Error fetching pace:", error);
+      return res.json({ pace: null, isPersonalised: false });
     }
   });
 

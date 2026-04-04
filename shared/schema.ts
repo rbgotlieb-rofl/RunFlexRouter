@@ -41,6 +41,16 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const runHistory = pgTable("run_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  routeId: integer("route_id"),
+  distanceKm: doublePrecision("distance_km").notNull(),
+  durationSeconds: doublePrecision("duration_seconds").notNull(),
+  paceMinPerKm: doublePrecision("pace_min_per_km"),
+  completedAt: timestamp("completed_at").defaultNow(),
+});
+
 export const preferences = pgTable("preferences", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
@@ -69,6 +79,11 @@ export const insertPreferencesSchema = createInsertSchema(preferences).omit({
   updatedAt: true,
 });
 
+export const insertRunHistorySchema = createInsertSchema(runHistory).omit({
+  id: true,
+  completedAt: true,
+});
+
 // -- Drizzle inferred types -------------------------------------------------
 
 export type User = typeof users.$inferSelect;
@@ -77,6 +92,8 @@ export type SavedRoute = typeof savedRoutes.$inferSelect;
 export type InsertSavedRoute = z.infer<typeof insertSavedRouteSchema>;
 export type Preferences = typeof preferences.$inferSelect;
 export type InsertPreferences = z.infer<typeof insertPreferencesSchema>;
+export type RunHistoryEntry = typeof runHistory.$inferSelect;
+export type InsertRunHistory = z.infer<typeof insertRunHistorySchema>;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 
 // -- Zod schemas for API validation -----------------------------------------
@@ -133,6 +150,8 @@ export type Route = {
   distance: number;
   elevationGain?: number;
   estimatedTime?: number;
+  isPersonalisedEstimate?: boolean;
+  userPaceMinPerKm?: number;
   routePath?: any;
   routeType?: string;
   surfaceType?: 'road' | 'trail' | 'mixed';

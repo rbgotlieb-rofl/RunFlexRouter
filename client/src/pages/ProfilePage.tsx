@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { authFetch } from "@/lib/api";
 import MainLayout from "@/components/layouts/MainLayout";
 import { Button } from "@/components/ui/button";
-import { User, MapPin, Calendar, LogOut, Loader2 } from "lucide-react";
-import { Route } from "@shared/schema";
+import { User, MapPin, Calendar, LogOut, Loader2, Gauge, Footprints } from "lucide-react";
+import { Route, RunHistoryEntry } from "@shared/schema";
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -18,7 +18,26 @@ export default function ProfilePage() {
     },
   });
 
+  const { data: paceData } = useQuery<{ pace: number | null; isPersonalised: boolean }>({
+    queryKey: ['/api/runs/pace'],
+    queryFn: async () => {
+      const res = await authFetch('/api/runs/pace');
+      if (!res.ok) return { pace: null, isPersonalised: false };
+      return res.json();
+    },
+  });
+
+  const { data: runHistory = [] } = useQuery<RunHistoryEntry[]>({
+    queryKey: ['/api/runs'],
+    queryFn: async () => {
+      const res = await authFetch('/api/runs');
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const totalDistance = savedRoutes.reduce((sum, r) => sum + (r.distance || 0), 0);
+  const totalRunDistance = runHistory.reduce((sum, r) => sum + (r.distanceKm || 0), 0);
 
   return (
     <MainLayout>
@@ -36,18 +55,35 @@ export default function ProfilePage() {
           {/* Stats */}
           <div className="grid grid-cols-2 gap-4 mb-8">
             <div className="bg-white border rounded-xl p-4 text-center">
+              <Footprints className="h-5 w-5 text-primary mx-auto mb-2" />
+              <div className="text-2xl font-bold">
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : runHistory.length}
+              </div>
+              <div className="text-xs text-gray-500">Runs Completed</div>
+            </div>
+            <div className="bg-white border rounded-xl p-4 text-center">
+              <Calendar className="h-5 w-5 text-primary mx-auto mb-2" />
+              <div className="text-2xl font-bold">
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : `${totalRunDistance.toFixed(1)}km`}
+              </div>
+              <div className="text-xs text-gray-500">Total Run Distance</div>
+            </div>
+            <div className="bg-white border rounded-xl p-4 text-center">
+              <Gauge className="h-5 w-5 text-primary mx-auto mb-2" />
+              <div className="text-2xl font-bold">
+                {paceData?.pace ? `${paceData.pace.toFixed(1)}` : '--'}
+              </div>
+              <div className="text-xs text-gray-500">Avg Pace (min/km)</div>
+              {paceData?.isPersonalised && (
+                <div className="text-[10px] text-blue-600 font-medium mt-1">Personalising estimates</div>
+              )}
+            </div>
+            <div className="bg-white border rounded-xl p-4 text-center">
               <MapPin className="h-5 w-5 text-primary mx-auto mb-2" />
               <div className="text-2xl font-bold">
                 {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : savedRoutes.length}
               </div>
               <div className="text-xs text-gray-500">Saved Routes</div>
-            </div>
-            <div className="bg-white border rounded-xl p-4 text-center">
-              <Calendar className="h-5 w-5 text-primary mx-auto mb-2" />
-              <div className="text-2xl font-bold">
-                {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : `${totalDistance.toFixed(0)}km`}
-              </div>
-              <div className="text-xs text-gray-500">Total Distance</div>
             </div>
           </div>
 

@@ -4,11 +4,14 @@ import {
   savedRoutes,
   preferences,
   passwordResetTokens,
+  runHistory,
   type User,
   type InsertUser,
   type Route,
   type RoutePreferences,
   type PasswordResetToken,
+  type RunHistoryEntry,
+  type InsertRunHistory,
 } from "@shared/schema";
 import { getDb } from "./db";
 
@@ -29,6 +32,10 @@ export interface IStorage {
   savePreferences(prefs: Partial<RoutePreferences>): Promise<RoutePreferences>;
   getPreferences(userId?: number): Promise<RoutePreferences | undefined>;
 
+  saveRunHistory(entry: InsertRunHistory): Promise<RunHistoryEntry>;
+  getRunHistoryByUserId(userId: number): Promise<RunHistoryEntry[]>;
+  getUserAveragePace(userId: number): Promise<number | null>;
+
   createPasswordResetToken(userId: number, token: string, expiresAt: Date): Promise<PasswordResetToken>;
   getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   markPasswordResetTokenUsed(token: string): Promise<void>;
@@ -42,9 +49,11 @@ export class MemStorage implements IStorage {
   private routes: Map<number, Route> = new Map();
   private preferences: Map<number, RoutePreferences> = new Map();
   private resetTokens: Map<string, PasswordResetToken> = new Map();
+  private runHistoryEntries: Map<number, RunHistoryEntry> = new Map();
   private routeId = 1;
   private preferenceId = 1;
   private resetTokenId = 1;
+  private runHistoryId = 1;
   currentId = 1;
 
   async getUser(id: number) {
@@ -115,6 +124,34 @@ export class MemStorage implements IStorage {
 
   async getPreferences() {
     return this.preferences.get(1);
+  }
+
+  async saveRunHistory(entry: InsertRunHistory): Promise<RunHistoryEntry> {
+    const id = this.runHistoryId++;
+    const newEntry: RunHistoryEntry = { ...entry, id, completedAt: new Date() };
+    this.runHistoryEntries.set(id, newEntry);
+    return newEntry;
+  }
+
+  async getRunHistoryByUserId(userId: number): Promise<RunHistoryEntry[]> {
+    return Array.from(this.runHistoryEntries.values())
+      .filter((e) => e.userId === userId)
+      .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0));
+  }
+
+  async getUserAveragePace(userId: number): Promise<number | null> {
+    const runs = await this.getRunHistoryByUserId(userId);
+    const withPace = runs.filter((r) => r.paceMinPerKm != null && r.distanceKm >= 0.5);
+    if (withPace.length === 0) return null;
+    // Weight recent runs more: use exponential decay
+    let weightedSum = 0;
+    let weightTotal = 0;
+    for (let i = 0; i < withPace.length; i++) {
+      const weight = Math.exp(-0.3 * i); // most recent first
+      weightedSum += withPace[i].paceMinPerKm! * weight;
+      weightTotal += weight;
+    }
+    return weightedSum / weightTotal;
   }
 
   async createPasswordResetToken(userId: number, token: string, expiresAt: Date): Promise<PasswordResetToken> {
@@ -292,6 +329,53 @@ export class DatabaseStorage implements IStorage {
   async getPreferences(): Promise<RoutePreferences | undefined> {
     const rows = await this.db.select().from(preferences).limit(1);
     return rows[0] ? this.mapPrefs(rows[0]) : undefined;
+  }
+
+  async saveRunHistory(entry: InsertRunHistory): Promise<RunHistoryEntry> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS run_history (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER REFERENCES users(id),
+          route_id INTEGER,
+          distance_km DOUBLE PRECISION NOT NULL,
+          duration_seconds DOUBLE PRECISION NOT NULL,
+          pace_min_per_km DOUBLE PRECISION,
+          completed_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+    } catch {}
+    const rows = await this.db
+      .insert(runHistory)
+      .values(entry)
+      .returning();
+    return rows[0];
+  }
+
+  async getRunHistoryByUserId(userId: number): Promise<RunHistoryEntry[]> {
+    try {
+      const rows = await this.db
+        .select()
+        .from(runHistory)
+        .where(eq(runHistory.userId, userId));
+      return rows.sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0));
+    } catch {
+      return [];
+    }
+  }
+
+  async getUserAveragePace(userId: number): Promise<number | null> {
+    const runs = await this.getRunHistoryByUserId(userId);
+    const withPace = runs.filter((r) => r.paceMinPerKm != null && r.distanceKm >= 0.5);
+    if (withPace.length === 0) return null;
+    let weightedSum = 0;
+    let weightTotal = 0;
+    for (let i = 0; i < withPace.length; i++) {
+      const weight = Math.exp(-0.3 * i);
+      weightedSum += withPace[i].paceMinPerKm! * weight;
+      weightTotal += weight;
+    }
+    return weightedSum / weightTotal;
   }
 
   async createPasswordResetToken(userId: number, token: string, expiresAt: Date): Promise<PasswordResetToken> {
