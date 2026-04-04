@@ -5,6 +5,7 @@ import { Heart, Share2, Watch, ArrowLeft, Loader2 } from "lucide-react";
 import { getFeatureIcon, getRouteTypeColor } from "@/lib/route-utils";
 import RouteDirections from "./RouteDirections";
 import RouteMapPreview from "../map/RouteMapPreview";
+import SendToWatchButton from "../watch/SendToWatchButton";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/api";
@@ -205,6 +206,8 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
               <Button onClick={onStartRun} className="w-full bg-primary hover:bg-primary/90 py-6 text-lg">
                 Start Run
               </Button>
+
+              <SendToWatchButton route={route} />
 
               <Button
                 onClick={sendToGarminWatch}
