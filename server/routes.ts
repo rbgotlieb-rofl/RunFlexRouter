@@ -5,6 +5,11 @@ import { routeFilterSchema } from "@shared/schema";
 import { generateRoutes } from "./services/route-generator";
 import { searchLocations, geocodeLocation } from "./services/location-service";
 import { generateCircularRoute, hasRetracing, isGoodLoop, computeLoopScore } from "./generateCircularRoute";
+import {
+  isStravaConfigured, getAuthorizationUrl, exchangeCode,
+  getTokens, setTokens, clearTokens, uploadActivity,
+  type StravaActivityData,
+} from "./services/strava";
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -1589,6 +1594,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Reverse geocode error:", error);
       res.json({ name: null });
+    }
+  });
+
+  // ── Strava integration ────────────────────────────────────────────────
+
+  // GET /api/strava/status — is Strava configured & is the user connected?
+  app.get("/api/strava/status", (req, res) => {
+    const configured = isStravaConfigured();
+    const sessionId = req.sessionID;
+    const tokens = sessionId ? getTokens(sessionId) : undefined;
+    res.json({
+      configured,
+      connected: !!tokens,
+      athleteName: tokens?.athleteName ?? null,
+    });
+  });
+
+  // GET /api/strava/auth — redirect user to Strava OAuth
+  app.get("/api/strava/auth", (req, res) => {
+    if (!isStravaConfigured()) {
+      return res.status(501).json({ message: "Strava is not configured on this server" });
+    }
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+    const redirectUri = `${protocol}://${host}/api/strava/callback`;
+    const state = req.sessionID || "anonymous";
+    const url = getAuthorizationUrl(redirectUri, state);
+    res.json({ url });
+  });
+
+  // GET /api/strava/callback — Strava redirects here after authorization
+  app.get("/api/strava/callback", async (req, res) => {
+    const code = req.query.code as string | undefined;
+    const error = req.query.error as string | undefined;
+
+    if (error || !code) {
+      return res.redirect("/?strava=error");
+    }
+
+    try {
+      const tokens = await exchangeCode(code);
+      const sessionId = req.sessionID;
+      if (sessionId) {
+        setTokens(sessionId, tokens);
+      }
+      res.redirect("/?strava=connected");
+    } catch (err: any) {
+      console.error("Strava callback error:", err.message);
+      res.redirect("/?strava=error");
+    }
+  });
+
+  // POST /api/strava/disconnect — remove stored tokens
+  app.post("/api/strava/disconnect", (req, res) => {
+    const sessionId = req.sessionID;
+    if (sessionId) clearTokens(sessionId);
+    res.json({ ok: true });
+  });
+
+  // POST /api/strava/upload — upload a completed run to Strava
+  app.post("/api/strava/upload", async (req, res) => {
+    const sessionId = req.sessionID;
+    if (!sessionId || !getTokens(sessionId)) {
+      return res.status(401).json({ message: "Not connected to Strava" });
+    }
+
+    const body = req.body as StravaActivityData;
+    if (!body.name || !body.positions?.length || !body.elapsedSeconds) {
+      return res.status(400).json({ message: "Missing required activity data (name, positions, elapsedSeconds)" });
+    }
+
+    try {
+      const result = await uploadActivity(sessionId, body);
+      res.json(result);
+    } catch (err: any) {
+      console.error("Strava upload error:", err.message);
+      res.status(502).json({ message: err.message });
     }
   });
 
