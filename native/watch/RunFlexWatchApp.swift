@@ -82,8 +82,8 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: sessionManager.receivedRoute) { _, route in
-            if route != nil && runPhase == .waiting {
+        .onChange(of: sessionManager.receivedRoute?.id) { _, routeId in
+            if routeId != nil && runPhase == .waiting {
                 runPhase = .ready
             }
         }

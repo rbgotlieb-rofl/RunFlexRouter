@@ -6,21 +6,18 @@ struct RouteReadyView: View {
     let route: WatchRoute
     let onStart: () -> Void
 
-    @State private var region: MKCoordinateRegion
-
-    init(route: WatchRoute, onStart: @escaping () -> Void) {
-        self.route = route
-        self.onStart = onStart
-
-        // Calculate map region from route bounds
+    private var cameraPosition: MapCameraPosition {
         let lats = route.routePath.map(\.lat)
         let lngs = route.routePath.map(\.lng)
-        let centerLat = (lats.min()! + lats.max()!) / 2
-        let centerLng = (lngs.min()! + lngs.max()!) / 2
-        let spanLat = (lats.max()! - lats.min()!) * 1.3
-        let spanLng = (lngs.max()! - lngs.min()!) * 1.3
-
-        _region = State(initialValue: MKCoordinateRegion(
+        guard let minLat = lats.min(), let maxLat = lats.max(),
+              let minLng = lngs.min(), let maxLng = lngs.max() else {
+            return .automatic
+        }
+        let centerLat = (minLat + maxLat) / 2
+        let centerLng = (minLng + maxLng) / 2
+        let spanLat = (maxLat - minLat) * 1.3
+        let spanLng = (maxLng - minLng) * 1.3
+        return .region(MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLng),
             span: MKCoordinateSpan(latitudeDelta: max(spanLat, 0.005), longitudeDelta: max(spanLng, 0.005))
         ))
@@ -30,7 +27,7 @@ struct RouteReadyView: View {
         ScrollView {
             VStack(spacing: 12) {
                 // Route preview map
-                Map(coordinateRegion: .constant(region))
+                Map(position: .constant(cameraPosition)) { }
                 .overlay(RoutePolylineOverlay(path: route.routePath))
                 .frame(height: 120)
                 .cornerRadius(12)

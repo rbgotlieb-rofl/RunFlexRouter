@@ -192,25 +192,27 @@ struct RouteMapView: View {
     let userLocation: CLLocationCoordinate2D?
     let progress: Double
 
-    @State private var region: MKCoordinateRegion = MKCoordinateRegion()
-
     var body: some View {
-        Map(coordinateRegion: $region, showsUserLocation: true)
-            .onAppear { updateRegion() }
-            .onChange(of: userLocation?.latitude) { _, _ in updateRegion() }
+        Map(position: $cameraPosition) {
+            UserAnnotation()
+        }
+        .onAppear { updateCamera() }
+        .onChange(of: userLocation?.latitude) { _, _ in updateCamera() }
     }
 
-    private func updateRegion() {
+    @State private var cameraPosition: MapCameraPosition = .automatic
+
+    private func updateCamera() {
         if let loc = userLocation {
-            region = MKCoordinateRegion(
+            cameraPosition = .region(MKCoordinateRegion(
                 center: loc,
                 span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
-            )
+            ))
         } else if let first = route.routePath.first {
-            region = MKCoordinateRegion(
+            cameraPosition = .region(MKCoordinateRegion(
                 center: first.clLocation,
                 span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-            )
+            ))
         }
     }
 }
