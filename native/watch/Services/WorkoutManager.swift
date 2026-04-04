@@ -7,7 +7,7 @@ final class WorkoutManager: NSObject, ObservableObject {
     @Published var metrics = RunMetrics()
     @Published var workoutState: WorkoutState = .notStarted
 
-    enum WorkoutState {
+    enum WorkoutState: Equatable {
         case notStarted, running, paused, finished
     }
 
