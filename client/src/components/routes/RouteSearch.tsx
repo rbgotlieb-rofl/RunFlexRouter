@@ -219,7 +219,7 @@ export default function RouteSearch({
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
-                            {mins < 60 ? `${mins}min` : `${mins / 60}h${mins % 60 ? ` ${mins % 60}m` : ''}`}
+                            {mins < 60 ? `${mins}min` : `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}min` : ''}`}
                           </button>
                         ))}
                       </div>
