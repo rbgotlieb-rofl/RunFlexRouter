@@ -83,13 +83,22 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
     }
   };
 
-  // Garmin integration — share GPX course to Garmin Connect app
-  const { garminState, sendToGarmin } = useGarmin();
+  // Garmin integration — push course directly via Garmin Connect API
+  const { garminState, sendToGarmin, linkGarminAccount } = useGarmin();
 
   const sendToGarminWatch = async () => {
+    // If Garmin account isn't linked, prompt to link first
+    if (!garminState.isLinked) {
+      toast({
+        title: "Link Garmin Account",
+        description: "Go to your Profile to connect your Garmin account, then you can send courses directly to your watch.",
+        duration: 5000,
+      });
+      return;
+    }
+
     setSendingToWatch(true);
     const success = await sendToGarmin({
-      id: route.id,
       name: route.name,
       distance: route.distance,
       routePath: route.routePath,
@@ -99,13 +108,13 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
     if (success) {
       const cleanName = route.name.replace(/\s*\([0-9.]+km\)/i, '');
       toast({
-        title: "Course Shared",
-        description: `Import ${cleanName} in Garmin Connect to sync it to your watch. Then start a Course activity on your watch to navigate.`,
-        duration: 7000,
+        title: "Sent to Garmin",
+        description: `${cleanName} will appear on your watch shortly. Start a Course activity to navigate.`,
+        duration: 5000,
       });
     } else if (garminState.error) {
       toast({
-        title: "Failed to Share",
+        title: "Failed to Send",
         description: garminState.error,
         variant: "destructive",
       });
@@ -201,15 +210,17 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
                   <Watch className="h-5 w-5" />
                 )}
                 {sendingToWatch
-                  ? "Preparing Course..."
-                  : garminState.courseSentToGarmin
-                  ? "Sent to Garmin Connect"
-                  : "Send to Garmin Watch"}
+                  ? "Sending..."
+                  : garminState.courseSent
+                  ? "Sent to Garmin Watch"
+                  : garminState.isLinked
+                  ? "Send to Garmin Watch"
+                  : "Link Garmin to Send"}
               </Button>
 
-              {garminState.courseSentToGarmin && (
+              {garminState.courseSent && (
                 <p className="text-xs text-green-600 px-1">
-                  Course shared. Open Garmin Connect to import it, then start a Course activity on your watch.
+                  Course sent. It will appear on your watch — start a Course activity to navigate.
                 </p>
               )}
             </div>

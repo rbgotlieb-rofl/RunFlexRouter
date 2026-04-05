@@ -1,132 +1,142 @@
 /**
- * Garmin Watch Integration Hook
+ * Garmin Connect Integration Hook
  *
- * Sends courses to a Garmin watch via Garmin Connect by:
- * 1. Generating a GPX course file (server-side)
- * 2. Saving it to device storage (Capacitor Filesystem)
- * 3. Opening the native share sheet so the user can send it to Garmin Connect
+ * Manages the connection to a user's Garmin Connect account and
+ * pushes courses directly via the Garmin Courses API — the same
+ * approach Strava uses for "Send to Device".
  *
- * Garmin Connect then syncs the course to the paired watch, which uses its
- * built-in course navigation to show the map, turn cues, and progress.
- *
- * Also manages the "navigate on watch" toggle that suppresses phone-side
- * voice/haptic alerts when the runner is using their Garmin for directions.
+ * Flow:
+ * 1. User links their Garmin account once (OAuth in Profile page)
+ * 2. Tap "Send to Garmin Watch" → course is pushed server→Garmin API
+ * 3. Garmin Connect syncs the course to the paired watch automatically
+ * 4. User starts a Course activity on the watch for navigation
  */
 
-import { useState, useCallback } from 'react';
-import { Capacitor } from '@capacitor/core';
+import { useState, useEffect, useCallback } from 'react';
 import { GarminNavigationMode } from '@shared/schema';
 import { authFetch } from '@/lib/api';
 
 export interface GarminState {
-  /** Whether a course has been sent to Garmin Connect in this session */
-  courseSentToGarmin: boolean;
-  /** Whether the GPX is currently being generated/shared */
-  isSending: boolean;
+  /** Whether the user has linked their Garmin account */
+  isLinked: boolean;
+  /** Whether we're currently checking the link status */
+  isCheckingStatus: boolean;
+  /** Whether a course is currently being pushed */
+  isPushing: boolean;
+  /** Whether a course was successfully sent in this session */
+  courseSent: boolean;
   /** Navigation mode: watch = suppress phone alerts */
   navigationMode: GarminNavigationMode;
-  /** Error message if sharing failed */
+  /** Error message if something failed */
   error: string | null;
 }
 
 export function useGarmin() {
   const [garminState, setGarminState] = useState<GarminState>({
-    courseSentToGarmin: false,
-    isSending: false,
+    isLinked: false,
+    isCheckingStatus: true,
+    isPushing: false,
+    courseSent: false,
     navigationMode: 'phone',
     error: null,
   });
 
+  // Check Garmin link status on mount
+  useEffect(() => {
+    checkGarminStatus();
+  }, []);
+
+  const checkGarminStatus = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/garmin/status');
+      if (res.ok) {
+        const data = await res.json();
+        setGarminState((s) => ({ ...s, isLinked: data.linked, isCheckingStatus: false }));
+      } else {
+        setGarminState((s) => ({ ...s, isCheckingStatus: false }));
+      }
+    } catch {
+      setGarminState((s) => ({ ...s, isCheckingStatus: false }));
+    }
+  }, []);
+
   /**
-   * Generate a GPX course file and share it to Garmin Connect.
-   *
-   * On native (Capacitor): saves the file and opens the share sheet,
-   * where the user picks Garmin Connect to import the course.
-   *
-   * On web: downloads the GPX file, which the user can then drag into
-   * Garmin Connect web or import via the mobile app.
+   * Start the Garmin OAuth flow.
+   * Gets the authorization URL from the server and redirects the user.
+   */
+  const linkGarminAccount = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/garmin/auth');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to start Garmin link');
+      }
+      const { url } = await res.json();
+      // Redirect to Garmin OAuth page
+      window.location.href = url;
+    } catch (err: any) {
+      setGarminState((s) => ({ ...s, error: err.message }));
+    }
+  }, []);
+
+  /**
+   * Unlink the user's Garmin account.
+   */
+  const unlinkGarminAccount = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/garmin/link', { method: 'DELETE' });
+      if (res.ok) {
+        setGarminState((s) => ({
+          ...s,
+          isLinked: false,
+          courseSent: false,
+        }));
+      }
+    } catch {}
+  }, []);
+
+  /**
+   * Push a course directly to the user's Garmin Connect account.
+   * Garmin Connect syncs it to their paired watch automatically.
    */
   const sendToGarmin = useCallback(async (route: {
-    id?: number;
     name: string;
+    description?: string;
     distance: number;
     routePath: any;
     directions: any;
   }): Promise<boolean> => {
-    setGarminState((s) => ({ ...s, isSending: true, error: null }));
+    setGarminState((s) => ({ ...s, isPushing: true, error: null }));
 
     try {
-      // 1. Fetch GPX from server
-      const gpxResponse = await authFetch('/api/garmin/course/gpx', {
+      const res = await authFetch('/api/garmin/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: route.name,
+          description: route.description,
           distance: route.distance,
           routePath: route.routePath,
           directions: route.directions,
         }),
       });
 
-      if (!gpxResponse.ok) {
-        throw new Error('Failed to generate GPX course');
-      }
-
-      const gpxContent = await gpxResponse.text();
-      const cleanName = route.name.replace(/\s*\([0-9.]+km\)/i, '').replace(/[^a-zA-Z0-9_ -]/g, '');
-      const fileName = `${cleanName}.gpx`;
-
-      if (Capacitor.isNativePlatform()) {
-        // Native: save to cache dir and share via native share sheet
-        const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const { Share } = await import('@capacitor/share');
-
-        // Write GPX file to cache directory
-        const writeResult = await Filesystem.writeFile({
-          path: fileName,
-          data: gpxContent,
-          directory: Directory.Cache,
-        });
-
-        // Share the file — opens the native share sheet
-        // User picks "Garmin Connect" to import as a course
-        await Share.share({
-          title: `${cleanName} — RunFlex Course`,
-          text: `Import this course into Garmin Connect to navigate on your watch`,
-          url: writeResult.uri,
-          dialogTitle: 'Send course to Garmin Connect',
-        });
-      } else {
-        // Web fallback: download the GPX file
-        const blob = new Blob([gpxContent], { type: 'application/gpx+xml' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to send course to Garmin');
       }
 
       setGarminState((s) => ({
         ...s,
-        isSending: false,
-        courseSentToGarmin: true,
+        isPushing: false,
+        courseSent: true,
       }));
       return true;
     } catch (err: any) {
-      // Share cancelled by user is not an error
-      if (err?.message?.includes('cancelled') || err?.message?.includes('canceled')) {
-        setGarminState((s) => ({ ...s, isSending: false }));
-        return false;
-      }
-
-      console.error('Garmin share error:', err);
       setGarminState((s) => ({
         ...s,
-        isSending: false,
-        error: err.message || 'Failed to send course to Garmin',
+        isPushing: false,
+        error: err.message,
       }));
       return false;
     }
@@ -134,9 +144,9 @@ export function useGarmin() {
 
   /**
    * Set the navigation mode.
-   * 'watch'  = phone alerts suppressed (user is navigating on Garmin)
+   * 'watch'  = phone alerts suppressed (user navigating on Garmin)
    * 'phone'  = normal phone navigation
-   * 'both'   = alerts on both devices
+   * 'both'   = alerts on both
    */
   const setNavigationMode = useCallback((mode: GarminNavigationMode) => {
     setGarminState((s) => ({ ...s, navigationMode: mode }));
@@ -144,12 +154,15 @@ export function useGarmin() {
 
   /** Whether phone navigation alerts should be suppressed. */
   const shouldSuppressPhoneNav =
-    garminState.navigationMode === 'watch' && garminState.courseSentToGarmin;
+    garminState.navigationMode === 'watch' && garminState.courseSent;
 
   return {
     garminState,
+    linkGarminAccount,
+    unlinkGarminAccount,
     sendToGarmin,
     setNavigationMode,
     shouldSuppressPhoneNav,
+    checkGarminStatus,
   };
 }

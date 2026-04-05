@@ -300,7 +300,7 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
           </button>
 
           <div className="pointer-events-auto flex gap-2">
-            {garminState.courseSentToGarmin && (
+            {garminState.courseSent && (
               <button
                 onClick={() => setShowGarminPanel(!showGarminPanel)}
                 className={`backdrop-blur-sm rounded-full p-2 shadow-lg transition-colors ${
@@ -340,7 +340,7 @@ export default function LiveRunTracker({ route, onClose }: LiveRunTrackerProps) 
         )}
 
         {/* Garmin navigation mode panel */}
-        {showGarminPanel && garminState.courseSentToGarmin && (
+        {showGarminPanel && garminState.courseSent && (
           <div className="absolute top-16 right-4 left-4 z-10">
             <div className="bg-white rounded-lg border border-gray-200 shadow-lg p-3">
               <div className="flex items-center gap-2 mb-2">
