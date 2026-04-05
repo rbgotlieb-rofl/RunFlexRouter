@@ -5,6 +5,14 @@ import { routeFilterSchema } from "@shared/schema";
 import { generateRoutes } from "./services/route-generator";
 import { searchLocations, geocodeLocation } from "./services/location-service";
 import { generateCircularRoute, hasRetracing, isGoodLoop, computeLoopScore } from "./generateCircularRoute";
+import { generateGarminGpx, buildGarminCourseData } from "./services/garmin-course-export";
+import {
+  getGarminAuthUrl,
+  exchangeGarminCode,
+  pushCourseToGarmin,
+  isGarminLinked,
+  unlinkGarmin,
+} from "./services/garmin-connect";
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -1589,6 +1597,202 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Reverse geocode error:", error);
       res.json({ name: null });
+    }
+  });
+
+  // ---------- Garmin Connect API integration ----------
+
+  /**
+   * GET /api/garmin/status
+   * Check if the current user has linked their Garmin account.
+   */
+  app.get("/api/garmin/status", (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.json({ linked: false });
+    }
+    res.json({ linked: isGarminLinked(userId) });
+  });
+
+  /**
+   * GET /api/garmin/auth
+   * Start the Garmin OAuth2 PKCE flow. Redirects the user to Garmin Connect
+   * to grant access. Requires the user to be logged in to RunFlex.
+   */
+  app.get("/api/garmin/auth", (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Must be logged in to link Garmin" });
+    }
+
+    try {
+      const authUrl = getGarminAuthUrl(userId);
+      res.json({ url: authUrl });
+    } catch (error: any) {
+      console.error("Garmin auth URL error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  /**
+   * GET /api/garmin/callback
+   * OAuth2 callback — Garmin redirects here after the user grants access.
+   * Exchanges the authorization code for tokens and redirects to the profile page.
+   */
+  app.get("/api/garmin/callback", async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const state = req.query.state as string;
+
+      if (!code || !state) {
+        return res.redirect("/profile?garmin=error&reason=missing_params");
+      }
+
+      await exchangeGarminCode(code, state);
+      res.redirect("/profile?garmin=linked");
+    } catch (error: any) {
+      console.error("Garmin OAuth callback error:", error);
+      res.redirect(`/profile?garmin=error&reason=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  /**
+   * DELETE /api/garmin/link
+   * Unlink the user's Garmin account.
+   */
+  app.delete("/api/garmin/link", (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    unlinkGarmin(userId);
+    res.json({ success: true });
+  });
+
+  /**
+   * POST /api/garmin/push
+   * Push a course directly to the user's Garmin Connect account.
+   * The course will sync to their paired watch automatically.
+   */
+  app.post("/api/garmin/push", async (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    if (!isGarminLinked(userId)) {
+      return res.status(400).json({ message: "Garmin account not linked" });
+    }
+
+    try {
+      const { name, description, distance, routePath, directions } = req.body;
+
+      if (!name || !routePath || !Array.isArray(routePath) || routePath.length < 2) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+
+      const result = await pushCourseToGarmin(userId, {
+        name,
+        description,
+        distance: distance || 0,
+        routePath,
+        directions: directions || [],
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Garmin push error:", error);
+      res.status(500).json({ message: error.message || "Failed to push course to Garmin" });
+    }
+  });
+
+  // ---------- Garmin course export endpoints (GPX fallback) ----------
+
+  /**
+   * GET /api/routes/:id/garmin/gpx
+   * Export a saved route as a GPX course file for Garmin devices.
+   */
+  app.get("/api/routes/:id/garmin/gpx", async (req, res) => {
+    try {
+      const routeId = parseInt(req.params.id, 10);
+      if (isNaN(routeId)) {
+        return res.status(400).json({ message: "Invalid route ID" });
+      }
+
+      const route = await storage.getRoute(routeId);
+      if (!route) {
+        return res.status(404).json({ message: "Route not found" });
+      }
+
+      const gpx = generateGarminGpx({
+        name: route.name,
+        description: route.description || undefined,
+        distance: route.distance,
+        routePath: (route.routePath || []) as { lat: number; lng: number }[],
+        directions: (route.directions || []) as { instruction: string; distance: number; duration: number }[],
+      });
+
+      res.setHeader("Content-Type", "application/gpx+xml");
+      res.setHeader("Content-Disposition", `attachment; filename="${route.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.gpx"`);
+      res.send(gpx);
+    } catch (error) {
+      console.error("GPX export error:", error);
+      res.status(500).json({ message: "Failed to export GPX" });
+    }
+  });
+
+  /**
+   * POST /api/garmin/course
+   * Build a lightweight course data payload for sending to a Garmin watch via BLE.
+   * Accepts a route object in the request body (doesn't require a saved route).
+   */
+  app.post("/api/garmin/course", async (req, res) => {
+    try {
+      const { name, distance, routePath, directions } = req.body;
+
+      if (!name || !routePath || !Array.isArray(routePath) || routePath.length < 2) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+
+      const courseData = buildGarminCourseData({
+        name,
+        distance: distance || 0,
+        routePath,
+        directions: directions || [],
+      });
+
+      res.json(courseData);
+    } catch (error) {
+      console.error("Garmin course build error:", error);
+      res.status(500).json({ message: "Failed to build course data" });
+    }
+  });
+
+  /**
+   * POST /api/garmin/course/gpx
+   * Generate a GPX course file from route data in the request body.
+   * Used by the mobile app to create GPX files for sharing to Garmin Connect.
+   */
+  app.post("/api/garmin/course/gpx", async (req, res) => {
+    try {
+      const { name, distance, routePath, directions } = req.body;
+
+      if (!name || !routePath || !Array.isArray(routePath) || routePath.length < 2) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+
+      const gpx = generateGarminGpx({
+        name,
+        distance: distance || 0,
+        routePath,
+        directions: directions || [],
+      });
+
+      res.setHeader("Content-Type", "application/gpx+xml");
+      res.send(gpx);
+    } catch (error) {
+      console.error("GPX export error:", error);
+      res.status(500).json({ message: "Failed to export GPX" });
     }
   });
 

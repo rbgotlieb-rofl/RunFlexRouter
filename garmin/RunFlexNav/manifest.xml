@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!--
+  RunFlex Navigation — Garmin Connect IQ App Manifest
+
+  This app runs on Garmin watches that support Connect IQ 4.0+.
+  It receives course data from the RunFlex phone app via BLE,
+  displays a map with the route and current position, shows
+  turn-by-turn navigation cues, and reports progress back to the phone.
+-->
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="5">
+  <iq:application
+    id="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    type="watch-app"
+    name="@Strings.AppName"
+    entry="RunFlexNavApp"
+    launcherIcon="@Drawables.LauncherIcon"
+    minSdkVersion="4.0.0">
+
+    <!-- Supported devices (popular running watches) -->
+    <iq:products>
+      <iq:product id="fr165" />
+      <iq:product id="fr255" />
+      <iq:product id="fr265" />
+      <iq:product id="fr955" />
+      <iq:product id="fr965" />
+      <iq:product id="fenix7" />
+      <iq:product id="fenix7s" />
+      <iq:product id="fenix7x" />
+      <iq:product id="fenix8" />
+      <iq:product id="epix2" />
+      <iq:product id="venu3" />
+      <iq:product id="venu3s" />
+      <iq:product id="enduro2" />
+      <iq:product id="enduro3" />
+    </iq:products>
+
+    <!-- Permissions -->
+    <iq:permissions>
+      <iq:uses-permission id="Positioning" />
+      <iq:uses-permission id="Communications" />
+      <iq:uses-permission id="Sensor" />
+    </iq:permissions>
+
+    <!-- Languages -->
+    <iq:languages>
+      <iq:language>eng</iq:language>
+    </iq:languages>
+
+    <!-- Barrels (libraries) -->
+    <iq:barrels />
+  </iq:application>
+</iq:manifest>

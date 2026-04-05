@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import { Route, RouteFeature, Point } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Heart, Share2, Watch, ArrowLeft, Loader2 } from "lucide-react";
+import { Heart, Share2, Watch, ArrowLeft, Loader2, Download } from "lucide-react";
 import { getFeatureIcon, getRouteTypeColor } from "@/lib/route-utils";
 import RouteDirections from "./RouteDirections";
 import RouteMapPreview from "../map/RouteMapPreview";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/api";
+import { useGarmin } from "@/hooks/use-garmin";
 interface RouteDetailSheetProps {
   route: Route;
   isOpen: boolean;
@@ -82,52 +83,43 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
     }
   };
 
-  // Function to send the route to a Garmin watch
+  // Garmin integration — push course directly via Garmin Connect API
+  const { garminState, sendToGarmin, linkGarminAccount } = useGarmin();
+
   const sendToGarminWatch = async () => {
-    try {
-      setSendingToWatch(true);
-      
-      // Simulate API call to Garmin Connect
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Prepare the route data in GPX format for Garmin
-      const routeData = {
-        id: route.id,
-        name: route.name.replace(/\s*\([0-9.]+km\)/i, ''), // Remove distance from name
-        waypoints: Array.isArray(route.routePath) 
-          ? route.routePath.map((point: {lat: number, lng: number}) => ({
-              lat: point.lat,
-              lng: point.lng
-            }))
-          : []
-      };
-      
-      // Log the data being sent (for debugging)
-      console.log("Sending route to Garmin watch:", routeData);
-      
-      // In a real implementation, we would make an actual API call to Garmin Connect
-      // For now, we'll simulate a successful transfer
-      
-      // Get clean route name without distance
-      const cleanRouteName = route.name.replace(/\s*\([0-9.]+km\)/i, '');
-      
+    // If Garmin account isn't linked, prompt to link first
+    if (!garminState.isLinked) {
       toast({
-        title: "Route Sent to Garmin Watch",
-        description: `${cleanRouteName} has been sent to your connected Garmin device.`,
+        title: "Link Garmin Account",
+        description: "Go to your Profile to connect your Garmin account, then you can send courses directly to your watch.",
         duration: 5000,
       });
-      
-    } catch (error) {
-      console.error("Error sending route to Garmin watch:", error);
-      toast({
-        title: "Failed to Send Route",
-        description: "There was a problem sending the route to your Garmin device. Please try again.",
-        variant: "destructive",
-        duration: 5000,
-      });
-    } finally {
-      setSendingToWatch(false);
+      return;
     }
+
+    setSendingToWatch(true);
+    const success = await sendToGarmin({
+      name: route.name,
+      distance: route.distance,
+      routePath: route.routePath,
+      directions: route.directions,
+    });
+
+    if (success) {
+      const cleanName = route.name.replace(/\s*\([0-9.]+km\)/i, '');
+      toast({
+        title: "Sent to Garmin",
+        description: `${cleanName} will appear on your watch shortly. Start a Course activity to navigate.`,
+        duration: 5000,
+      });
+    } else if (garminState.error) {
+      toast({
+        title: "Failed to Send",
+        description: garminState.error,
+        variant: "destructive",
+      });
+    }
+    setSendingToWatch(false);
   };
   
   if (!isMounted) {
@@ -212,9 +204,25 @@ export default function RouteDetailSheet({ route, isOpen, onClose, onStartRun, u
                 variant="outline"
                 className="w-full flex items-center justify-center gap-2 py-4"
               >
-                <Watch className="h-5 w-5" />
-                {sendingToWatch ? "Sending to Watch..." : "Send to Garmin Watch"}
+                {sendingToWatch ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Watch className="h-5 w-5" />
+                )}
+                {sendingToWatch
+                  ? "Sending..."
+                  : garminState.courseSent
+                  ? "Sent to Garmin Watch"
+                  : garminState.isLinked
+                  ? "Send to Garmin Watch"
+                  : "Link Garmin to Send"}
               </Button>
+
+              {garminState.courseSent && (
+                <p className="text-xs text-green-600 px-1">
+                  Course sent. It will appear on your watch — start a Course activity to navigate.
+                </p>
+              )}
             </div>
 
             {/* Route features */}

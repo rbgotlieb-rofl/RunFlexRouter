@@ -153,6 +153,11 @@ export type RouteFeature = 'scenic' | 'low_traffic' | 'well_lit' | 'waterfront' 
 export type RouteType = 'all' | 'any' | 'urban' | 'park' | 'waterfront';
 export type RouteMode = 'all' | 'a_to_b' | 'loop' | 'duration';
 
+// -- Garmin watch integration types -----------------------------------------
+
+/** Navigation mode: determines where turn-by-turn alerts are delivered */
+export type GarminNavigationMode = 'phone' | 'watch' | 'both';
+
 // -- Backwards-compatible types used by storage -----------------------------
 
 export type RoutePreferences = {
