@@ -81,7 +81,9 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: data["route"] ?? [:]) else { return }
 
         do {
-            let route = try JSONDecoder().decode(WatchRoute.self, from: jsonData)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .secondsSince1970
+            let route = try decoder.decode(WatchRoute.self, from: jsonData)
             DispatchQueue.main.async {
                 self.receivedRoute = route
             }

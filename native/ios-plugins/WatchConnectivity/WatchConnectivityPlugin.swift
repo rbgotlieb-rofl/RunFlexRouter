@@ -43,22 +43,41 @@ public class WatchConnectivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        // Convert JSObject to [String: Any] for WCSession
+        // Build a clean dictionary that can be serialized to JSON and decoded
+        // by WatchRoute on the watch side
         var routeDict: [String: Any] = [:]
-        routeDict["id"] = routeData["id"]
-        routeDict["name"] = routeData["name"]
-        routeDict["distance"] = routeData["distance"]
-        routeDict["estimatedTime"] = routeData["estimatedTime"]
-        routeDict["syncedAt"] = ISO8601DateFormatter().string(from: Date())
+        routeDict["id"] = routeData["id"] as? Int ?? 0
+        routeDict["name"] = routeData["name"] as? String ?? "Route"
+        routeDict["distance"] = routeData["distance"] as? Double ?? 0
+        routeDict["estimatedTime"] = routeData["estimatedTime"] as? Double
+        routeDict["syncedAt"] = Date().timeIntervalSince1970
 
-        // Convert routePath
-        if let pathArray = routeData["routePath"] as? [[String: Any]] {
-            routeDict["routePath"] = pathArray
+        // Convert routePath — Capacitor sends as JSArray (array of JSObject)
+        if let pathArray = routeData["routePath"] as? JSArray {
+            var coords: [[String: Double]] = []
+            for item in pathArray {
+                if let point = item as? JSObject,
+                   let lat = point["lat"] as? Double,
+                   let lng = point["lng"] as? Double {
+                    coords.append(["lat": lat, "lng": lng])
+                }
+            }
+            routeDict["routePath"] = coords
         }
 
         // Convert directions
-        if let dirsArray = routeData["directions"] as? [[String: Any]] {
-            routeDict["directions"] = dirsArray
+        if let dirsArray = routeData["directions"] as? JSArray {
+            var steps: [[String: Any]] = []
+            for item in dirsArray {
+                if let step = item as? JSObject {
+                    var stepDict: [String: Any] = [:]
+                    stepDict["instruction"] = step["instruction"] as? String ?? ""
+                    stepDict["distance"] = step["distance"] as? Double ?? 0
+                    stepDict["duration"] = step["duration"] as? Double ?? 0
+                    steps.append(stepDict)
+                }
+            }
+            routeDict["directions"] = steps
         }
 
         manager.sendRoute(routeDict)
