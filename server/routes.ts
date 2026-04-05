@@ -13,6 +13,14 @@ import {
   isGarminLinked,
   unlinkGarmin,
 } from "./services/garmin-connect";
+import { generateCorosGpx, buildCorosCourseData } from "./services/coros-course-export";
+import {
+  getCorosAuthUrl,
+  exchangeCorosCode,
+  pushCourseToCoros,
+  isCorosLinked,
+  unlinkCoros,
+} from "./services/coros-connect";
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -1793,6 +1801,211 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("GPX export error:", error);
       res.status(500).json({ message: "Failed to export GPX" });
+    }
+  });
+
+  // ---------- COROS Training Hub API integration ----------
+
+  /**
+   * GET /api/coros/status
+   * Check if the current user has linked their COROS account.
+   */
+  app.get("/api/coros/status", (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.json({ linked: false });
+    }
+    res.json({ linked: isCorosLinked(userId) });
+  });
+
+  /**
+   * GET /api/coros/auth
+   * Start the COROS OAuth2 flow. Redirects the user to COROS
+   * to grant access. Requires the user to be logged in to RunFlex.
+   */
+  app.get("/api/coros/auth", (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Must be logged in to link COROS" });
+    }
+
+    try {
+      const authUrl = getCorosAuthUrl(userId);
+      res.json({ url: authUrl });
+    } catch (error: any) {
+      console.error("COROS auth URL error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  /**
+   * GET /api/coros/callback
+   * OAuth2 callback — COROS redirects here after the user grants access.
+   * Exchanges the authorization code for tokens and redirects to the profile page.
+   */
+  app.get("/api/coros/callback", async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const state = req.query.state as string;
+
+      if (!code || !state) {
+        return res.redirect("/profile?coros=error&reason=missing_params");
+      }
+
+      await exchangeCorosCode(code, state);
+      res.redirect("/profile?coros=linked");
+    } catch (error: any) {
+      console.error("COROS OAuth callback error:", error);
+      res.redirect(`/profile?coros=error&reason=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  /**
+   * DELETE /api/coros/link
+   * Unlink the user's COROS account.
+   */
+  app.delete("/api/coros/link", (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    unlinkCoros(userId);
+    res.json({ success: true });
+  });
+
+  /**
+   * POST /api/coros/push
+   * Push a course to the user's COROS Training Hub account.
+   * The course will sync to their paired watch automatically.
+   * COROS receives a GPX file with turn-by-turn course points.
+   */
+  app.post("/api/coros/push", async (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    if (!isCorosLinked(userId)) {
+      return res.status(400).json({ message: "COROS account not linked" });
+    }
+
+    try {
+      const { name, description, distance, routePath, directions } = req.body;
+
+      if (!name || !routePath || !Array.isArray(routePath) || routePath.length < 2) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+
+      // Generate GPX with turn-by-turn cue points for COROS
+      const gpxData = generateCorosGpx({
+        name,
+        description,
+        distance: distance || 0,
+        routePath,
+        directions: directions || [],
+      });
+
+      const result = await pushCourseToCoros(userId, {
+        name,
+        description,
+        distance: distance || 0,
+        gpxData,
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("COROS push error:", error);
+      res.status(500).json({ message: error.message || "Failed to push course to COROS" });
+    }
+  });
+
+  // ---------- COROS course export endpoints (GPX download) ----------
+
+  /**
+   * GET /api/routes/:id/coros/gpx
+   * Export a saved route as a GPX course file for COROS watches.
+   */
+  app.get("/api/routes/:id/coros/gpx", async (req, res) => {
+    try {
+      const routeId = parseInt(req.params.id, 10);
+      if (isNaN(routeId)) {
+        return res.status(400).json({ message: "Invalid route ID" });
+      }
+
+      const route = await storage.getRoute(routeId);
+      if (!route) {
+        return res.status(404).json({ message: "Route not found" });
+      }
+
+      const gpx = generateCorosGpx({
+        name: route.name,
+        description: route.description || undefined,
+        distance: route.distance,
+        routePath: (route.routePath || []) as { lat: number; lng: number }[],
+        directions: (route.directions || []) as { instruction: string; distance: number; duration: number }[],
+      });
+
+      res.setHeader("Content-Type", "application/gpx+xml");
+      res.setHeader("Content-Disposition", `attachment; filename="${route.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_coros.gpx"`);
+      res.send(gpx);
+    } catch (error) {
+      console.error("COROS GPX export error:", error);
+      res.status(500).json({ message: "Failed to export GPX for COROS" });
+    }
+  });
+
+  /**
+   * POST /api/coros/course
+   * Build a lightweight course data payload for the COROS integration.
+   * Accepts a route object in the request body (doesn't require a saved route).
+   */
+  app.post("/api/coros/course", async (req, res) => {
+    try {
+      const { name, distance, routePath, directions } = req.body;
+
+      if (!name || !routePath || !Array.isArray(routePath) || routePath.length < 2) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+
+      const courseData = buildCorosCourseData({
+        name,
+        distance: distance || 0,
+        routePath,
+        directions: directions || [],
+      });
+
+      res.json(courseData);
+    } catch (error) {
+      console.error("COROS course build error:", error);
+      res.status(500).json({ message: "Failed to build course data" });
+    }
+  });
+
+  /**
+   * POST /api/coros/course/gpx
+   * Generate a GPX course file formatted for COROS from route data in the request body.
+   * Used by the mobile app to create GPX files for importing into COROS Training Hub.
+   */
+  app.post("/api/coros/course/gpx", async (req, res) => {
+    try {
+      const { name, distance, routePath, directions } = req.body;
+
+      if (!name || !routePath || !Array.isArray(routePath) || routePath.length < 2) {
+        return res.status(400).json({ message: "Invalid route data" });
+      }
+
+      const gpx = generateCorosGpx({
+        name,
+        distance: distance || 0,
+        routePath,
+        directions: directions || [],
+      });
+
+      res.setHeader("Content-Type", "application/gpx+xml");
+      res.send(gpx);
+    } catch (error) {
+      console.error("COROS GPX export error:", error);
+      res.status(500).json({ message: "Failed to export GPX for COROS" });
     }
   });
 

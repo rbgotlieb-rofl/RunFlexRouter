@@ -158,6 +158,11 @@ export type RouteMode = 'all' | 'a_to_b' | 'loop' | 'duration';
 /** Navigation mode: determines where turn-by-turn alerts are delivered */
 export type GarminNavigationMode = 'phone' | 'watch' | 'both';
 
+// -- COROS watch integration types ------------------------------------------
+
+/** Navigation mode for COROS: determines where turn-by-turn alerts are delivered */
+export type CorosNavigationMode = 'phone' | 'watch' | 'both';
+
 // -- Backwards-compatible types used by storage -----------------------------
 
 export type RoutePreferences = {
