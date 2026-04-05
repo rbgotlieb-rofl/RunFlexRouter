@@ -23,6 +23,10 @@ final class WorkoutManager: NSObject, ObservableObject {
     // MARK: - Authorization
 
     func requestAuthorization() {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("[WorkoutManager] HealthKit not available")
+            return
+        }
         let typesToShare: Set<HKSampleType> = [
             HKObjectType.workoutType()
         ]
@@ -38,6 +42,17 @@ final class WorkoutManager: NSObject, ObservableObject {
     // MARK: - Workout lifecycle
 
     func startWorkout() {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            // Fall back to basic timer-only tracking without HealthKit
+            startDate = Date()
+            workoutState = .running
+            totalDistance = 0
+            lastLocation = nil
+            metrics = RunMetrics()
+            startTimer()
+            return
+        }
+
         let config = HKWorkoutConfiguration()
         config.activityType = .running
         config.locationType = .outdoor
